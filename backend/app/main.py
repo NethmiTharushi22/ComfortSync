@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.routers.auth import router as auth_router
+
 app = FastAPI(title="ComfortSync API")
 
 app.add_middleware(
@@ -20,3 +22,6 @@ def read_root() -> dict[str, str]:
 @app.get("/health")
 def health_check() -> dict[str, str]:
     return {"status": "ok"}
+
+
+app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
