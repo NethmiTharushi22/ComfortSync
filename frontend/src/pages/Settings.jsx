@@ -320,18 +320,7 @@ export default function Settings() {
   return (
     <div className="settings-page">
       <section className="settings-hero">
-        <div className="settings-hero__copy">
-          <p className="settings-kicker">Profile center</p>
-          <h2>Make your account feel intentional.</h2>
-          <p className="settings-hero__text">
-            Update your personal details, profile image, and password from one place without changing any of the underlying account fields.
-          </p>
-          <div className="settings-pill-row">
-            <span className="settings-pill">Primary email</span>
-            <a href={`mailto:${user?.email}`} className="email-link">{user?.email}</a>
-          </div>
-        </div>
-
+        
         <aside className="settings-hero__panel">
           <div className={`settings-avatar settings-avatar--hero${avatarUploading ? ' avatar--uploading' : ''}`}>
             {displayAvatar ? <img src={displayAvatar} alt="avatar" /> : <span>{initials}</span>}
