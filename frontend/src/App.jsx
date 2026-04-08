@@ -1,9 +1,13 @@
+import { Navigate, Route, Routes } from "react-router-dom";
+
+import Dashboard from "./pages/Dashboard";
+
 function App() {
   return (
-    <main>
-      <h1>ComfortSync</h1>
-      <p>Frontend scaffold ready.</p>
-    </main>
+    <Routes>
+      <Route path="/" element={<Navigate to="/dashboard" replace />} />
+      <Route path="/dashboard" element={<Dashboard />} />
+    </Routes>
   );
 }
 
