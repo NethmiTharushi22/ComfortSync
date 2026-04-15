@@ -1,4 +1,6 @@
-from pydantic import BaseModel, ConfigDict, EmailStr
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class RegisterRequest(BaseModel):
@@ -45,9 +47,24 @@ class SensorReadingOut(BaseModel):
     temperature: float | None = None
     humidity: float | None = None
     gas: float | None = None
+    air_percent: float | None = None
     dust: float | None = None
     light: float | None = None
     recorded_at: str | None = None
+
+
+class DeviceControlsBase(BaseModel):
+    mode: str = "AUTO"
+    fan_state: bool = False
+    light_state: bool = False
+
+
+class DeviceControlUpdate(DeviceControlsBase):
+    pass
+
+
+class DeviceControlOut(DeviceControlsBase):
+    model_config = ConfigDict(from_attributes=True)
 
 
 class DashboardAlertOut(BaseModel):
@@ -59,8 +76,12 @@ class DashboardAlertOut(BaseModel):
 class DeviceStatusOut(BaseModel):
     label: str
     description: str
-    state: str
-    tone: str
+
+
+class GasPredictionOut(BaseModel):
+    predicted_value: float | None = None
+    unit: str = "ppm"
+    note: str
 
 
 class DashboardSnapshotOut(BaseModel):
@@ -68,4 +89,44 @@ class DashboardSnapshotOut(BaseModel):
     alerts: list[DashboardAlertOut]
     devices: list[DeviceStatusOut]
     recent_readings: list[SensorReadingOut]
+    controls: DeviceControlOut
+    gas_prediction: GasPredictionOut
     status: str
+
+
+class ChatMessageCreate(BaseModel):
+    user_email: EmailStr
+    role: Literal["user", "assistant"] = "user"
+    content: str = Field(min_length=1, max_length=4000)
+
+
+class ChatMessageOut(BaseModel):
+    id: str
+    role: Literal["user", "assistant"]
+    content: str
+    created_at: str
+
+
+class ChatHistoryCreate(BaseModel):
+    user_email: EmailStr
+    title: str | None = Field(default=None, max_length=120)
+
+
+class ChatHistoryUpdate(BaseModel):
+    user_email: EmailStr
+    title: str = Field(min_length=1, max_length=120)
+
+
+class ChatHistoryListItemOut(BaseModel):
+    id: str
+    user_email: EmailStr
+    title: str
+    preview: str
+    created_at: str
+    updated_at: str
+    last_message_at: str | None = None
+    message_count: int = 0
+
+
+class ChatHistoryOut(ChatHistoryListItemOut):
+    messages: list[ChatMessageOut]
