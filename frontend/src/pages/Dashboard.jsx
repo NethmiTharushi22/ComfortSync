@@ -1,8 +1,12 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
-  FiBell,
   FiCloud,
+  FiClock,
+  FiTrash2,
   FiDroplet,
+  FiMessageSquare,
+  FiPlus,
   FiSun,
   FiThermometer,
   FiTrendingUp,
@@ -15,9 +19,9 @@ import DashboardHeader from "../components/DashboardHeader";
 import DashboardSidebar from "../components/DashboardSidebar";
 import "./Dashboard.css";
 
-const tabs = ["Dashboard", "Analytics", "Settings"];
+const tabs = ["Dashboard", "Analytics", "Chat"];
 
-const forecast = [
+const staticForecast = [
   { label: "Temperature", value: "+1.8 C", note: "Likely to rise by evening" },
   { label: "Humidity", value: "+4%", note: "Indoor moisture trend increasing" },
   { label: "Gas level", value: "+12 ppm", note: "Peak cooking period expected" },
@@ -35,56 +39,165 @@ const hourlySeries = [
 
 const clampPercent = (value, max) => `${Math.min((value / max) * 100, 100)}%`;
 const POLL_INTERVAL_MS = 5000;
+const DASHBOARD_CACHE_KEY = "comfortsync.dashboard.snapshot";
 
-const DEFAULT_REALTIME = {
-  temperature: 26.4,
-  humidity: 58,
-  gas: 84,
-  light: 72,
-  dust: 46,
+const readDashboardCache = () => {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const rawValue = window.sessionStorage.getItem(DASHBOARD_CACHE_KEY);
+    return rawValue ? JSON.parse(rawValue) : null;
+  } catch {
+    return null;
+  }
 };
 
-const FALLBACK_DEVICES = [
+const writeDashboardCache = (value) => {
+  if (typeof window === "undefined" || !value) {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(value));
+  } catch {}
+};
+
+const readNumber = (value) =>
+  typeof value === "number" && Number.isFinite(value) ? value : null;
+
+const formatMetricValue = (value) => (typeof value === "number" ? value : "--");
+const buildControlPayload = (nextValues, currentValues) => {
+  return {
+    mode: nextValues.mode ?? currentValues.controlMode,
+    fan_state: nextValues.fan_state ?? currentValues.fanManualState,
+    light_state: nextValues.light_state ?? currentValues.lightManualState,
+  };
+};
+
+const PM25_AQI_BREAKPOINTS = [
+  { cLow: 0.0, cHigh: 9.0, iLow: 0, iHigh: 50, label: "Good", tone: "safe", note: "PM2.5 levels are in the healthy range." },
   {
-    label: "Ventilation Fan",
-    description: "Waiting for live device status",
-    state: "OFF",
-    tone: "safe",
+    cLow: 9.1,
+    cHigh: 35.4,
+    iLow: 51,
+    iHigh: 100,
+    label: "Moderate",
+    tone: "warning",
+    note: "Air quality is acceptable, but unusually sensitive people should monitor exposure.",
   },
   {
-    label: "Lights Control",
-    description: "Waiting for live light data",
-    state: "DIM",
-    tone: "safe",
+    cLow: 35.5,
+    cHigh: 55.4,
+    iLow: 101,
+    iHigh: 150,
+    label: "Unhealthy for Sensitive Groups",
+    tone: "warning",
+    note: "People with breathing issues should reduce prolonged exposure.",
+  },
+  {
+    cLow: 55.5,
+    cHigh: 125.4,
+    iLow: 151,
+    iHigh: 200,
+    label: "Unhealthy",
+    tone: "danger",
+    note: "Everyone may begin to feel health effects from the PM2.5 level.",
+  },
+  {
+    cLow: 125.5,
+    cHigh: 225.4,
+    iLow: 201,
+    iHigh: 300,
+    label: "Very Unhealthy",
+    tone: "danger",
+    note: "Health warnings apply to everyone at this PM2.5 concentration.",
+  },
+  {
+    cLow: 225.5,
+    cHigh: 325.4,
+    iLow: 301,
+    iHigh: 400,
+    label: "Hazardous",
+    tone: "danger",
+    note: "Emergency conditions: avoid exposure and improve ventilation immediately.",
+  },
+  {
+    cLow: 325.5,
+    cHigh: 500.4,
+    iLow: 401,
+    iHigh: 500,
+    label: "Hazardous",
+    tone: "danger",
+    note: "Emergency conditions: avoid exposure and improve ventilation immediately.",
   },
 ];
 
-const numberOrFallback = (value, fallback) =>
-  typeof value === "number" && Number.isFinite(value) ? value : fallback;
-
-const getAqiSummary = (dust, gas) => {
-  const dustScore = Math.min(Math.round((dust / 150) * 300), 300);
-  const gasScore = Math.min(Math.round((gas / 1000) * 220), 220);
-  const aqi = Math.max(18, Math.min(300, Math.round(dustScore * 0.65 + gasScore * 0.35)));
-
-  if (aqi <= 50) {
-    return { value: aqi, label: "Good", tone: "safe", note: "Air quality is stable and comfortable." };
+const getPm25AqiSummary = (pm25) => {
+  if (typeof pm25 !== "number" || !Number.isFinite(pm25) || pm25 < 0) {
+    return {
+      value: null,
+      label: "Unavailable",
+      tone: "warning",
+      note: "Waiting for a live PM2.5 reading from the database.",
+    };
   }
 
-  if (aqi <= 100) {
+  const truncatedPm25 = Math.floor(pm25 * 10) / 10;
+  const breakpoint =
+    PM25_AQI_BREAKPOINTS.find((item) => truncatedPm25 >= item.cLow && truncatedPm25 <= item.cHigh) ??
+    PM25_AQI_BREAKPOINTS[PM25_AQI_BREAKPOINTS.length - 1];
+
+  const aqiValue = Math.round(
+    ((breakpoint.iHigh - breakpoint.iLow) / (breakpoint.cHigh - breakpoint.cLow)) *
+      (truncatedPm25 - breakpoint.cLow) +
+      breakpoint.iLow,
+  );
+
+  return {
+    value: Math.min(aqiValue, 500),
+    label: breakpoint.label,
+    tone: breakpoint.tone,
+    note: `${breakpoint.note}`,
+  };
+};
+
+const getGasSummary = (airPercent) => {
+  if (typeof airPercent !== "number" || !Number.isFinite(airPercent) || airPercent < 0) {
     return {
-      value: aqi,
+      value: null,
+      label: "Unavailable",
+      tone: "warning",
+      note: "Waiting for a live air quality percentage from the database.",
+    };
+  }
+
+  const gasLevel = Math.min(100, Math.max(0, 100 - airPercent));
+
+  if (gasLevel >= 60) {
+    return {
+      value: gasLevel,
+      label: "High",
+      tone: "danger",
+      note: "Gas level is high, so ventilation is recommended.",
+    };
+  }
+
+  if (gasLevel >= 30) {
+    return {
+      value: gasLevel,
       label: "Moderate",
       tone: "warning",
-      note: "Sensitive users may notice slight discomfort.",
+      note: "Gas level is rising and should be watched.",
     };
   }
 
   return {
-    value: aqi,
-    label: "Unhealthy",
-    tone: "danger",
-    note: "Ventilation is recommended to improve indoor air.",
+    value: gasLevel,
+    label: "Low",
+    tone: "safe",
+    note: "Gas level is low and indoor air looks stable.",
   };
 };
 
@@ -100,6 +213,23 @@ const formatDelta = (currentValue, previousValue, unit) => {
 
   const sign = delta > 0 ? "+" : "";
   return `${sign}${delta.toFixed(1)} ${unit} from previous reading`;
+};
+
+const formatAirQualityDelta = (currentValue, previousValue) => {
+  if (typeof currentValue !== "number" || typeof previousValue !== "number") {
+    return "Waiting for air quality trend";
+  }
+
+  const delta = currentValue - previousValue;
+  if (Math.abs(delta) < 0.1) {
+    return "Air quality percentage is stable";
+  }
+
+  if (delta > 0) {
+    return `+${delta.toFixed(1)}% air quality improvement`;
+  }
+
+  return `${delta.toFixed(1)}% air quality drop`;
 };
 
 const formatTimestamp = (value) => {
@@ -121,34 +251,341 @@ const formatTimestamp = (value) => {
   }).format(parsed);
 };
 
+const formatChatRelativeTime = (value) => {
+  if (!value) {
+    return "Just now";
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return "Just now";
+  }
+
+  const diffMs = Date.now() - parsed.getTime();
+  const diffMinutes = Math.max(0, Math.round(diffMs / 60000));
+
+  if (diffMinutes < 1) {
+    return "Just now";
+  }
+
+  if (diffMinutes < 60) {
+    return `${diffMinutes}m ago`;
+  }
+
+  const diffHours = Math.round(diffMinutes / 60);
+  if (diffHours < 24) {
+    return `${diffHours}h ago`;
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+  }).format(parsed);
+};
+
+const toChatHistorySummary = (history) => ({
+  id: history.id,
+  user_email: history.user_email,
+  title: history.title,
+  preview: history.preview,
+  created_at: history.created_at,
+  updated_at: history.updated_at,
+  last_message_at: history.last_message_at,
+  message_count: history.message_count,
+});
+
+const upsertChatHistorySummary = (items, history) => {
+  const nextItem = toChatHistorySummary(history);
+  const remaining = items.filter((item) => item.id !== nextItem.id);
+  return [nextItem, ...remaining].sort(
+    (left, right) => new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime(),
+  );
+};
+
+const buildAssistantReply = ({ prompt, dashboardData, latestUpdated, aqi, gasSummary }) => {
+  const normalizedPrompt = prompt.trim().toLowerCase();
+  const current = dashboardData?.current ?? {};
+  const temperature = readNumber(current.temperature);
+  const humidity = readNumber(current.humidity);
+  const dust = readNumber(current.dust);
+  const light = readNumber(current.light);
+  const airPercent = readNumber(current.air_percent);
+
+  if (normalizedPrompt.includes("gas") || normalizedPrompt.includes("air")) {
+    return `Gas status is ${gasSummary.label.toLowerCase()} right now${
+      typeof gasSummary.value === "number" ? ` at ${gasSummary.value.toFixed(1)}%` : ""
+    }. ${gasSummary.note} Last live update was ${latestUpdated}.`;
+  }
+
+  if (normalizedPrompt.includes("dust") || normalizedPrompt.includes("aqi")) {
+    return `Current PM2.5 AQI is ${aqi.value ?? "--"} and the room is marked as ${aqi.label.toLowerCase()}. ${aqi.note}`;
+  }
+
+  if (normalizedPrompt.includes("temperature")) {
+    return `The latest room temperature is ${
+      typeof temperature === "number" ? `${temperature.toFixed(1)} C` : "not available yet"
+    }. ${
+      typeof temperature === "number" && temperature >= 30
+        ? "That is above the comfort range, so airflow or cooling would help."
+        : "It is currently within a more comfortable range."
+    }`;
+  }
+
+  if (normalizedPrompt.includes("humidity")) {
+    return `Humidity is ${
+      typeof humidity === "number" ? `${humidity.toFixed(1)}%` : "not available yet"
+    }. ${
+      typeof humidity === "number" && (humidity < 35 || humidity > 70)
+        ? "It is outside the ideal band, so the room should be monitored."
+        : "It is currently close to the ideal indoor range."
+    }`;
+  }
+
+  if (normalizedPrompt.includes("light")) {
+    return `Light intensity is ${
+      typeof light === "number" ? `${light.toFixed(1)} lux` : "not available yet"
+    }. ${
+      typeof light === "number" && light < 120
+        ? "The room looks dim, so switching lights on would make sense."
+        : "Lighting looks adequate from the latest reading."
+    }`;
+  }
+
+  return `Here’s a quick room summary from the latest reading at ${latestUpdated}: temperature ${
+    typeof temperature === "number" ? `${temperature.toFixed(1)} C` : "--"
+  }, humidity ${
+    typeof humidity === "number" ? `${humidity.toFixed(1)}%` : "--"
+  }, air quality ${
+    typeof airPercent === "number" ? `${airPercent.toFixed(1)}%` : "--"
+  }, dust ${typeof dust === "number" ? `${dust.toFixed(1)} ug/m3` : "--"}. Ask me about gas, AQI, temperature, humidity, or lighting and I’ll focus on that.`;
+};
+
+function ChatPanel({
+  histories,
+  activeChat,
+  activeChatId,
+  chatInput,
+  onInputChange,
+  onQuickAction,
+  onCreateChat,
+  onSelectChat,
+  onDeleteChat,
+  onSend,
+  isLoading,
+  isCreating,
+  isSending,
+  deletingChatId,
+  chatError,
+}) {
+  return (
+    <section className="dashboard-chat-grid">
+      <aside className="dashboard-card dashboard-chat-history">
+        <div className="dashboard-chat-history__header">
+          <div>
+            <p className="dashboard-card-label">Stored conversations</p>
+            <h2>Chat history</h2>
+          </div>
+          <button
+            type="button"
+            className="dashboard-chat-create"
+            onClick={onCreateChat}
+            disabled={isCreating}
+          >
+            <FiPlus />
+            {isCreating ? "Creating..." : "New"}
+          </button>
+        </div>
+
+        <div className="dashboard-chat-history__list">
+          {histories.length ? (
+            histories.map((history) => (
+              <article
+                key={history.id}
+                className={`dashboard-chat-history__item${
+                  activeChatId === history.id ? " dashboard-chat-history__item--active" : ""
+                }`}
+              >
+                <button
+                  type="button"
+                  className="dashboard-chat-history__select"
+                  onClick={() => onSelectChat(history.id)}
+                >
+                  <strong>{history.title}</strong>
+                  <p>{history.preview}</p>
+                  <span>
+                    <FiClock />
+                    {formatChatRelativeTime(history.last_message_at || history.updated_at)}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  className="dashboard-chat-history__delete"
+                  onClick={() => onDeleteChat(history.id)}
+                  disabled={deletingChatId === history.id}
+                  aria-label={`Delete ${history.title}`}
+                >
+                  <FiTrash2 />
+                </button>
+              </article>
+            ))
+          ) : (
+            <div className="dashboard-chat-history__empty">
+              <FiMessageSquare />
+              <p>No saved chats yet. Start a new conversation to create one.</p>
+            </div>
+          )}
+        </div>
+      </aside>
+
+      <article className="dashboard-card dashboard-chat-card">
+        <div className="dashboard-card__header">
+          <div>
+            <p className="dashboard-card-label">ComfortSync assistant</p>
+            <h2>{activeChat?.title ?? "Chatbot workspace"}</h2>
+          </div>
+          <span className="dashboard-chat-badge">
+            <FiMessageSquare />
+            History enabled
+          </span>
+        </div>
+
+        <div className="dashboard-chat-hero">
+          <div>
+            <p className="dashboard-card-label">Smart indoor assistant</p>
+            <h3>Your air-quality copilot</h3>
+            <p className="dashboard-chat-hero__copy">
+              Each conversation is now saved in the database, so you can revisit past questions and room summaries.
+            </p>
+          </div>
+
+          <div className="dashboard-chat-quick-actions" aria-label="Suggested prompts">
+            <button type="button" className="dashboard-chat-chip" onClick={() => onQuickAction("Explain the gas trend in this room.")}>
+              Explain gas trend
+            </button>
+            <button type="button" className="dashboard-chat-chip" onClick={() => onQuickAction("Give me a room safety summary.")}>
+              Room safety summary
+            </button>
+            <button type="button" className="dashboard-chat-chip" onClick={() => onQuickAction("What device action do you suggest right now?")}>
+              Suggest device action
+            </button>
+          </div>
+        </div>
+
+        {chatError ? <p className="dashboard-alert-banner">{chatError}</p> : null}
+
+        <div className="dashboard-chat-thread">
+          {isLoading ? (
+            <div className="dashboard-chat-empty-state">
+              <p>Loading chat history...</p>
+            </div>
+          ) : activeChat?.messages?.length ? (
+            activeChat.messages.map((message) => (
+              <article
+                key={message.id}
+                className={`dashboard-chat-message dashboard-chat-message--${message.role}`}
+              >
+                <strong>{message.role === "assistant" ? "ComfortBot" : "You"}</strong>
+                <p>{message.content}</p>
+                <span className="dashboard-chat-message__time">
+                  {formatChatRelativeTime(message.created_at)}
+                </span>
+              </article>
+            ))
+          ) : (
+            <div className="dashboard-chat-empty-state">
+              <FiMessageSquare />
+              <p>Pick a chat from the left or start a new one to save messages.</p>
+            </div>
+          )}
+        </div>
+
+        <form className="dashboard-chat-composer" onSubmit={onSend}>
+          <input
+            type="text"
+            className="dashboard-chat-input"
+            placeholder="Ask about temperature, air quality, gas, or device actions..."
+            value={chatInput}
+            onChange={(event) => onInputChange(event.target.value)}
+            disabled={isSending}
+          />
+          <button type="submit" className="dashboard-chat-send" disabled={isSending || !chatInput.trim()}>
+            {isSending ? "Sending..." : "Send"}
+          </button>
+        </form>
+      </article>
+    </section>
+  );
+}
+
 export default function Dashboard() {
+  const navigate = useNavigate();
   const { user, isAuthenticated, logout } = useAuth();
-  const [dashboardData, setDashboardData] = useState(null);
+  const [dashboardData, setDashboardData] = useState(() => readDashboardCache());
   const [dashboardError, setDashboardError] = useState("");
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [controlMode, setControlMode] = useState("AUTO");
+  const [fanManualState, setFanManualState] = useState(false);
+  const [lightManualState, setLightManualState] = useState(false);
+  const [isSavingControl, setIsSavingControl] = useState(false);
   const [activeTab, setActiveTab] = useState("Dashboard");
+  const [chatHistories, setChatHistories] = useState([]);
+  const [activeChatId, setActiveChatId] = useState("");
+  const [activeChat, setActiveChat] = useState(null);
+  const [chatInput, setChatInput] = useState("");
+  const [chatError, setChatError] = useState("");
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const [isCreatingChat, setIsCreatingChat] = useState(false);
+  const [isSendingChat, setIsSendingChat] = useState(false);
+  const [deletingChatId, setDeletingChatId] = useState("");
+
+  const userEmail = user?.email ?? "";
+
+  const fetchDashboard = async ({ manual = false } = {}) => {
+    if (manual) {
+      setIsRefreshing(true);
+    }
+
+    try {
+      const { data } = await api.get("/api/sensors/dashboard", {
+        headers: {
+          "Cache-Control": "no-cache",
+          Pragma: "no-cache",
+        },
+        params: manual ? { refreshAt: Date.now() } : undefined,
+      });
+
+      setDashboardData(data);
+      writeDashboardCache(data);
+      setDashboardError("");
+      return data;
+    } catch (error) {
+      const message =
+        error.response?.data?.detail ||
+        error.message ||
+        "Unable to load live dashboard data.";
+      setDashboardError(message);
+      throw error;
+    } finally {
+      if (manual) {
+        setIsRefreshing(false);
+      }
+    }
+  };
 
   useEffect(() => {
     let isMounted = true;
 
     const loadDashboard = async () => {
       try {
-        const { data } = await api.get("/api/sensors/dashboard");
+        await fetchDashboard();
         if (!isMounted) {
           return;
         }
-
-        setDashboardData(data);
-        setDashboardError("");
-      } catch (error) {
+      } catch {
         if (!isMounted) {
           return;
         }
-
-        const message =
-          error.response?.data?.detail ||
-          error.message ||
-          "Unable to load live dashboard data.";
-        setDashboardError(message);
       }
     };
 
@@ -161,47 +598,267 @@ export default function Dashboard() {
     };
   }, []);
 
+  const loadChatHistory = async (chatId) => {
+    if (!chatId || !userEmail) {
+      return null;
+    }
+
+    setIsChatLoading(true);
+
+    try {
+      const { data } = await api.get(`/api/chat-histories/${chatId}`, {
+        params: { user_email: userEmail },
+      });
+      setActiveChat(data);
+      setActiveChatId(data.id);
+      setChatError("");
+      return data;
+    } catch (error) {
+      setChatError(error.response?.data?.detail || "Unable to load chat history.");
+      throw error;
+    } finally {
+      setIsChatLoading(false);
+    }
+  };
+
+  const loadChatHistories = async ({ preferredChatId } = {}) => {
+    if (!userEmail) {
+      return [];
+    }
+
+    setIsChatLoading(true);
+
+    try {
+      const { data } = await api.get("/api/chat-histories", {
+        params: { user_email: userEmail },
+      });
+      setChatHistories(data);
+      setChatError("");
+
+      const nextChatId =
+        preferredChatId ||
+        (data.some((item) => item.id === activeChatId) ? activeChatId : data[0]?.id || "");
+
+      if (nextChatId) {
+        await loadChatHistory(nextChatId);
+      } else {
+        setActiveChat(null);
+        setActiveChatId("");
+      }
+
+      return data;
+    } catch (error) {
+      setChatError(error.response?.data?.detail || "Unable to load chat histories.");
+      throw error;
+    } finally {
+      setIsChatLoading(false);
+    }
+  };
+
+  const createChatHistory = async (initialTitle) => {
+    if (!userEmail) {
+      return null;
+    }
+
+    setIsCreatingChat(true);
+
+    try {
+      const { data } = await api.post("/api/chat-histories", {
+        user_email: userEmail,
+        title: initialTitle,
+      });
+      setChatHistories((current) => upsertChatHistorySummary(current, data));
+      setActiveChat(data);
+      setActiveChatId(data.id);
+      setChatError("");
+      return data;
+    } catch (error) {
+      setChatError(error.response?.data?.detail || "Unable to create a new chat.");
+      throw error;
+    } finally {
+      setIsCreatingChat(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab !== "Chat" || !userEmail) {
+      return;
+    }
+
+    loadChatHistories().catch(() => {});
+  }, [activeTab, userEmail]);
+
   const handleRefresh = async () => {
     try {
-      const { data } = await api.get("/api/sensors/dashboard");
-      setDashboardData(data);
+      await fetchDashboard({ manual: true });
+    } catch {}
+  };
+
+  const handleCreateChat = async () => {
+    await createChatHistory("New chat");
+  };
+
+  const handleDeleteChat = async (chatId) => {
+    if (!userEmail || !chatId) {
+      return;
+    }
+
+    setDeletingChatId(chatId);
+
+    try {
+      await api.delete(`/api/chat-histories/${chatId}`, {
+        params: { user_email: userEmail },
+      });
+
+      const remaining = chatHistories.filter((item) => item.id !== chatId);
+      setChatHistories(remaining);
+      setChatError("");
+
+      if (activeChatId === chatId) {
+        const nextChatId = remaining[0]?.id || "";
+        setActiveChatId(nextChatId);
+        if (nextChatId) {
+          await loadChatHistory(nextChatId);
+        } else {
+          setActiveChat(null);
+        }
+      }
+    } catch (error) {
+      setChatError(error.response?.data?.detail || "Unable to delete chat history.");
+    } finally {
+      setDeletingChatId("");
+    }
+  };
+
+  const handleSendChat = async (event) => {
+    event.preventDefault();
+
+    const trimmedMessage = chatInput.trim();
+    if (!trimmedMessage || !userEmail) {
+      return;
+    }
+
+    setIsSendingChat(true);
+
+    try {
+      let chatId = activeChatId;
+      if (!chatId) {
+        const created = await createChatHistory(trimmedMessage);
+        chatId = created?.id || "";
+      }
+
+      if (!chatId) {
+        return;
+      }
+
+      const { data: userHistory } = await api.post(`/api/chat-histories/${chatId}/messages`, {
+        user_email: userEmail,
+        role: "user",
+        content: trimmedMessage,
+      });
+
+      setActiveChat(userHistory);
+      setChatHistories((current) => upsertChatHistorySummary(current, userHistory));
+
+      const assistantReply = buildAssistantReply({
+        prompt: trimmedMessage,
+        dashboardData,
+        latestUpdated,
+        aqi,
+        gasSummary,
+      });
+
+      const { data: assistantHistory } = await api.post(`/api/chat-histories/${chatId}/messages`, {
+        user_email: userEmail,
+        role: "assistant",
+        content: assistantReply,
+      });
+
+      setActiveChat(assistantHistory);
+      setActiveChatId(assistantHistory.id);
+      setChatHistories((current) => upsertChatHistorySummary(current, assistantHistory));
+      setChatInput("");
+      setChatError("");
+    } catch (error) {
+      setChatError(error.response?.data?.detail || "Unable to send the chat message.");
+    } finally {
+      setIsSendingChat(false);
+    }
+  };
+
+  useEffect(() => {
+    const controls = dashboardData?.controls;
+    if (!controls || isSavingControl) {
+      return;
+    }
+
+    setControlMode(controls.mode === "MANUAL" ? "MANUAL" : "AUTO");
+    setFanManualState(Boolean(controls.fan_state));
+    setLightManualState(Boolean(controls.light_state));
+  }, [dashboardData, isSavingControl]);
+
+  const saveDeviceControl = async (nextValues = {}) => {
+    setIsSavingControl(true);
+
+    try {
+      const payload = buildControlPayload(nextValues, {
+        controlMode,
+        fanManualState,
+        lightManualState,
+      });
+
+      await api.post("/api/device-controls", payload);
+
+      setControlMode(payload.mode);
+      setFanManualState(payload.fan_state);
+      setLightManualState(payload.light_state);
+      setDashboardData((current) =>
+        current
+          ? {
+              ...current,
+              controls: payload,
+            }
+          : current,
+      );
+      writeDashboardCache({
+        ...(dashboardData ?? {}),
+        controls: payload,
+      });
       setDashboardError("");
     } catch (error) {
-      const message =
-        error.response?.data?.detail ||
-        error.message ||
-        "Unable to load live dashboard data.";
-      setDashboardError(message);
+      console.error("Failed to save device control", error);
+      setDashboardError(error.response?.data?.detail || "Unable to save control settings.");
+      throw error;
+    } finally {
+      setIsSavingControl(false);
     }
   };
 
   const liveReading = dashboardData?.current;
   const previousReading = dashboardData?.recent_readings?.[1];
   const realtime = {
-    temperature: numberOrFallback(liveReading?.temperature, DEFAULT_REALTIME.temperature),
-    humidity: numberOrFallback(liveReading?.humidity, DEFAULT_REALTIME.humidity),
-    gas: numberOrFallback(liveReading?.gas, DEFAULT_REALTIME.gas),
-    light: numberOrFallback(liveReading?.light, DEFAULT_REALTIME.light),
-    dust: numberOrFallback(liveReading?.dust, DEFAULT_REALTIME.dust),
+    temperature: readNumber(liveReading?.temperature),
+    humidity: readNumber(liveReading?.humidity),
+    gas: readNumber(liveReading?.gas),
+    airPercent: readNumber(liveReading?.air_percent),
+    light: readNumber(liveReading?.light),
+    dust: readNumber(liveReading?.dust),
   };
-  const alertItems =
-    dashboardData?.alerts?.length
-      ? dashboardData.alerts
-      : [
-          {
-            title: "Realtime sync active",
-            detail: "Waiting for backend data. Default sensor placeholders are visible.",
-            tone: "safe",
-          },
-        ];
+  const alertItems = dashboardData?.alerts ?? [];
   const hasAlerts =
     Boolean(dashboardError) ||
     alertItems.some((alert) => alert.tone === "warning" || alert.tone === "danger");
-  const deviceItems = dashboardData?.devices?.length ? dashboardData.devices : FALLBACK_DEVICES;
+  const deviceItems = dashboardData?.devices ?? [];
   const latestUpdated = formatTimestamp(liveReading?.recorded_at);
-  const aqi = getAqiSummary(realtime.dust, realtime.gas);
+  const aqi = getPm25AqiSummary(liveReading?.dust);
+  const gasSummary = getGasSummary(liveReading?.air_percent);
+  const gasPrediction = dashboardData?.gas_prediction;
+  const manualControlsDisabled = controlMode !== "MANUAL" || isSavingControl;
   const aqiGaugeStyle = {
-    "--aqi-angle": `${Math.min((aqi.value / 300) * 180, 180)}deg`,
+    "--aqi-angle": `${Math.min(((aqi.value ?? 0) / 500) * 180, 180)}deg`,
+  };
+  const gasGaugeStyle = {
+    "--aqi-angle": `${Math.min(((gasSummary.value ?? 0) / 100) * 180, 180)}deg`,
   };
 
   const sensorCards = [
@@ -222,11 +879,12 @@ export default function Dashboard() {
       icon: <FiDroplet />,
     },
     {
-      label: "Total gas level",
-      value: realtime.gas,
-      unit: "ppm",
-      note: formatDelta(realtime.gas, previousReading?.gas, "ppm"),
-      tone: realtime.gas >= 800 ? "rose" : "gold",
+      label: "Air quality level",
+      value: realtime.airPercent,
+      unit: "%",
+      note: formatAirQualityDelta(realtime.airPercent, previousReading?.air_percent),
+      tone:
+        realtime.airPercent >= 75 ? "mint" : realtime.airPercent >= 50 ? "gold" : "rose",
       icon: <FiCloud />,
     },
     {
@@ -247,16 +905,35 @@ export default function Dashboard() {
     },
   ];
 
+  const forecast = [
+    staticForecast[0],
+    staticForecast[1],
+    gasPrediction?.predicted_value != null
+      ? {
+          label: "Gas level",
+          value: `${gasPrediction.predicted_value.toFixed(1)} ${gasPrediction.unit}`,
+          note: gasPrediction.note,
+        }
+      : {
+          label: "Gas level",
+          value: "--",
+          note: gasPrediction?.note ?? "Prediction will appear after enough gas readings are available.",
+        },
+    staticForecast[3],
+  ];
+
   return (
     <main className="dashboard-root">
       <section className="dashboard-shell">
-        <DashboardSidebar onLogout={logout} />
+        <DashboardSidebar onLogout={logout} activeTab="Dashboard" onNavigate={navigate} />
 
         <section className="dashboard-main">
           <DashboardHeader
             isAuthenticated={isAuthenticated}
             userEmail={user?.email}
             hasAlerts={hasAlerts}
+            alertItems={alertItems}
+            latestAlertAt={liveReading?.recorded_at}
           />
 
           <div className="dashboard-tabs" role="tablist" aria-label="Dashboard views">
@@ -265,9 +942,11 @@ export default function Dashboard() {
                 key={tab}
                 type="button"
                 role="tab"
-                aria-selected={activeTab === tab}
-                className={`dashboard-tab ${activeTab === tab ? "dashboard-tab--active" : ""}`}
-                onClick={() => setActiveTab(tab)}
+                aria-selected={tab === "Chat" ? false : activeTab === tab}
+                className={`dashboard-tab ${
+                  tab !== "Chat" && activeTab === tab ? "dashboard-tab--active" : ""
+                }`}
+                onClick={() => (tab === "Chat" ? navigate("/chat") : setActiveTab(tab))}
               >
                 {tab}
               </button>
@@ -282,8 +961,14 @@ export default function Dashboard() {
                     <p className="dashboard-card-label">Realtime environmental values</p>
                     <h2>All sensors</h2>
                   </div>
-                  <button type="button" className="dashboard-pill-button" onClick={handleRefresh}>
-                    Refresh live data
+                  <button
+                    type="button"
+                    className="dashboard-pill-button"
+                    onClick={handleRefresh}
+                    disabled={isRefreshing}
+                    aria-busy={isRefreshing}
+                  >
+                    {isRefreshing ? "Refreshing..." : "Refresh live data"}
                   </button>
                 </div>
 
@@ -299,7 +984,7 @@ export default function Dashboard() {
                         </span>
                       </div>
                       <p className="dashboard-stat__value">
-                        {card.value}
+                        {formatMetricValue(card.value)}
                         <span> {card.unit}</span>
                       </p>
                       <p
@@ -322,7 +1007,30 @@ export default function Dashboard() {
                     <p className="dashboard-card-label">Device status</p>
                     <h2>Device controls</h2>
                   </div>
-                  <FiZap className="dashboard-card__trend" />
+                  <div className="dashboard-controls-header-actions">
+                    <div className="dashboard-control-segment" role="group" aria-label="Dashboard control mode">
+                      <button
+                        type="button"
+                        className={`dashboard-control-button ${
+                          controlMode === "AUTO" ? "dashboard-control-button--active" : ""
+                        }`}
+                        onClick={() => saveDeviceControl({ mode: "AUTO" })}
+                        disabled={isSavingControl}
+                      >
+                        Auto
+                      </button>
+                      <button
+                        type="button"
+                        className={`dashboard-control-button ${
+                          controlMode === "MANUAL" ? "dashboard-control-button--active" : ""
+                        }`}
+                        onClick={() => saveDeviceControl({ mode: "MANUAL" })}
+                        disabled={isSavingControl}
+                      >
+                        Manual
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="dashboard-device-panel">
@@ -331,69 +1039,114 @@ export default function Dashboard() {
                       <FiWind />
                     </div>
                     <div className="dashboard-control-card__content">
-                      <strong>{deviceItems[0]?.label ?? "Ventilation Fan"}</strong>
-                      <p>{deviceItems[0]?.description ?? "Auto Mode Active"}</p>
+                      <strong>{deviceItems[0]?.label ?? "--"}</strong>
+                      <p>{deviceItems[0]?.description ?? "Waiting for live device data."}</p>
+                      <div className="dashboard-control-stack">
+                        <div className="dashboard-control-segment" role="group" aria-label="Fan control">
+                          <button
+                            type="button"
+                            className={`dashboard-control-button ${
+                              fanManualState ? "dashboard-control-button--active" : ""
+                            }`}
+                            onClick={() => saveDeviceControl({ fan_state: true })}
+                            disabled={manualControlsDisabled}
+                          >
+                            Fan on
+                          </button>
+                          <button
+                            type="button"
+                            className={`dashboard-control-button ${
+                              !fanManualState ? "dashboard-control-button--active" : ""
+                            }`}
+                            onClick={() => saveDeviceControl({ fan_state: false })}
+                            disabled={manualControlsDisabled}
+                          >
+                            Fan off
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                    <span className="dashboard-control-card__pill">
-                      {deviceItems[0]?.state ?? "OFF"}
-                    </span>
                   </article>
 
                   <article className="dashboard-light-card">
                     <div className="dashboard-light-card__header">
-                      <strong>{deviceItems[1]?.label ?? "Lights Control"}</strong>
-                      <span>&gt;</span>
+                      <strong>{deviceItems[1]?.label ?? "--"}</strong>
+                      <div className="dashboard-light-card__hero" aria-hidden="true">
+                        <span className="dashboard-light-bulb dashboard-light-bulb--off" />
+                        <span className="dashboard-light-bulb dashboard-light-bulb--dim" />
+                        <span className="dashboard-light-bulb dashboard-light-bulb--active" />
+                      </div>
                     </div>
 
-                    <div className="dashboard-light-card__bulbs" aria-hidden="true">
-                      <span className="dashboard-light-bulb dashboard-light-bulb--off" />
-                      <span className="dashboard-light-bulb dashboard-light-bulb--off" />
-                      <span className="dashboard-light-bulb dashboard-light-bulb--active" />
-                      <span className="dashboard-light-bulb dashboard-light-bulb--dim" />
-                    </div>
-
-                    <div className="dashboard-light-card__status">
-                      <strong>{deviceItems[1]?.state ?? "DIM"}</strong>
-                      <button type="button" className="dashboard-light-switch" aria-label="Lights on">
-                        <span />
-                      </button>
+                    <div className="dashboard-control-stack">
+                      <div className="dashboard-control-segment" role="group" aria-label="Light control">
+                        <button
+                          type="button"
+                          className={`dashboard-control-button ${
+                            lightManualState ? "dashboard-control-button--active" : ""
+                          }`}
+                          onClick={() => saveDeviceControl({ light_state: true })}
+                          disabled={manualControlsDisabled}
+                        >
+                          Light on
+                        </button>
+                        <button
+                          type="button"
+                          className={`dashboard-control-button ${
+                            !lightManualState ? "dashboard-control-button--active" : ""
+                          }`}
+                          onClick={() => saveDeviceControl({ light_state: false })}
+                          disabled={manualControlsDisabled}
+                        >
+                          Light off
+                        </button>
+                      </div>
                     </div>
 
                     <p className="dashboard-light-card__meta">
-                      {deviceItems[1]?.description ?? "Balanced indoor lighting"}: {realtime.light} lux
+                      {isSavingControl
+                        ? "Saving control settings..."
+                        : deviceItems[1]?.description ?? "Waiting for live light data."}
+                      : {formatMetricValue(realtime.light)} lux
                     </p>
                   </article>
                 </div>
               </article>
 
-              <article className="dashboard-card dashboard-card--alerts">
+              <article className="dashboard-card dashboard-card--aqi">
                 <div className="dashboard-card__header">
                   <div>
-                    <p className="dashboard-card-label">Notifications</p>
-                    <h2>Active alerts</h2>
+                    <p className="dashboard-card-label">Gas level gauge</p>
+                    <h2>Current gas level</h2>
                   </div>
-                  <button type="button" className="dashboard-alert-button" onClick={handleRefresh}>
-                    Refresh data
-                  </button>
+                  <FiCloud className="dashboard-card__trend" />
                 </div>
 
-                {dashboardError ? <p className="dashboard-alert-banner">{dashboardError}</p> : null}
+                <div className="dashboard-aqi-panel">
+                  <div
+                    className={`dashboard-aqi-gauge dashboard-aqi-gauge--${gasSummary.tone}`}
+                    style={gasGaugeStyle}
+                  >
+                    <div className="dashboard-aqi-gauge__arc" />
+                    <div className={`dashboard-aqi-gauge__needle dashboard-aqi-gauge__needle--${gasSummary.tone}`} />
+                    <div className="dashboard-aqi-gauge__center">
+                      <strong>
+                        {typeof gasSummary.value === "number" ? gasSummary.value.toFixed(1) : "--"}
+                      </strong>
+                      <span>{gasSummary.label}</span>
+                    </div>
+                  </div>
 
-                <div className="dashboard-alert-list">
-                  {alertItems.map((alert) => (
-                    <article
-                      key={alert.title}
-                      className={`dashboard-alert-item dashboard-alert-item--${alert.tone}`}
-                    >
-                      <div className="dashboard-alert-item__icon">
-                        <FiBell />
-                      </div>
-                      <div className="dashboard-alert-item__content">
-                        <strong>{alert.title}</strong>
-                        <p>{alert.detail}</p>
-                      </div>
-                    </article>
-                  ))}
+                  <div className="dashboard-aqi-scale" aria-hidden="true">
+                    <span>0</span>
+                    <span>50</span>
+                    <span>100</span>
+                  </div>
+
+                  <div className={`dashboard-aqi-summary dashboard-aqi-summary--${gasSummary.tone}`}>
+                    <strong>{gasSummary.label}</strong>
+                    <p>{gasSummary.note}</p>
+                  </div>
                 </div>
               </article>
 
@@ -422,26 +1175,29 @@ export default function Dashboard() {
               <article className="dashboard-card dashboard-card--aqi">
                 <div className="dashboard-card__header">
                   <div>
-                    <p className="dashboard-card-label">AQI gauge</p>
-                    <h2>Indoor air quality</h2>
+                    <p className="dashboard-card-label">EPA PM2.5 AQI</p>
+                    <h2>Standard air quality index</h2>
                   </div>
                   <FiWind className="dashboard-card__trend" />
                 </div>
 
                 <div className="dashboard-aqi-panel">
-                  <div className="dashboard-aqi-gauge" style={aqiGaugeStyle}>
+                  <div
+                    className={`dashboard-aqi-gauge dashboard-aqi-gauge--${aqi.tone}`}
+                    style={aqiGaugeStyle}
+                  >
                     <div className="dashboard-aqi-gauge__arc" />
                     <div className={`dashboard-aqi-gauge__needle dashboard-aqi-gauge__needle--${aqi.tone}`} />
                     <div className="dashboard-aqi-gauge__center">
-                      <strong>{aqi.value}</strong>
+                      <strong>{aqi.value ?? "--"}</strong>
                       <span>{aqi.label}</span>
                     </div>
                   </div>
 
                   <div className="dashboard-aqi-scale" aria-hidden="true">
                     <span>0</span>
-                    <span>150</span>
-                    <span>300</span>
+                    <span>100</span>
+                    <span>500</span>
                   </div>
 
                   <div className={`dashboard-aqi-summary dashboard-aqi-summary--${aqi.tone}`}>
@@ -461,7 +1217,6 @@ export default function Dashboard() {
             />
           ) : null}
 
-          {activeTab === "Settings" ? <Settings /> : null}
         </section>
       </section>
     </main>

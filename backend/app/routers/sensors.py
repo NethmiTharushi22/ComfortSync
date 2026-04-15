@@ -10,15 +10,20 @@ from app.models.schemas import (
     DashboardAlertOut,
     DashboardSnapshotOut,
     DeviceStatusOut,
+    GasPredictionOut,
     SensorReadingOut,
 )
+from app.routers.device_controls import get_current_device_controls
+from app.services.gas_prediction import predict_next_gas_value
 
 router = APIRouter()
+ALERT_RETENTION_HOURS = 36
 
 FIELD_ALIASES = {
     "temperature": ("temperature", "temp"),
     "humidity": ("humidity",),
     "gas": ("gas", "co2", "gas_level", "gasLevel", "co2_level", "co2Level", "mq135_raw"),
+    "air_percent": ("air_percent", "airPercent", "air_quality_percent", "airQualityPercent"),
     "dust": ("dust", "dust_level", "dustLevel", "pm25", "pm2_5", "pm", "dust_concentration"),
     "light": ("light", "light_level", "lightLevel", "light_intensity", "lightIntensity", "lux", "light_lux"),
     "fan_status": ("fan_status", "fanState"),
@@ -69,21 +74,62 @@ def _normalize_reading(document) -> SensorReadingOut:
         temperature=_to_float(_first_present(payload, FIELD_ALIASES["temperature"])),
         humidity=_to_float(_first_present(payload, FIELD_ALIASES["humidity"])),
         gas=_to_float(_first_present(payload, FIELD_ALIASES["gas"])),
+        air_percent=_to_float(_first_present(payload, FIELD_ALIASES["air_percent"])),
         dust=_to_float(_first_present(payload, FIELD_ALIASES["dust"])),
         light=_to_float(_first_present(payload, FIELD_ALIASES["light"])),
         recorded_at=recorded_at,
     )
 
 
+def _parse_recorded_at(value: str | None) -> datetime | None:
+    if not value:
+        return None
+
+    normalized = value.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+
+    return parsed.astimezone(timezone.utc)
+
+
+def _alerts_are_active(reading: SensorReadingOut) -> bool:
+    recorded_at = _parse_recorded_at(reading.recorded_at)
+    if recorded_at is None:
+        return False
+
+    age = datetime.now(timezone.utc) - recorded_at
+    return age.total_seconds() <= ALERT_RETENTION_HOURS * 3600
+
+
 def _build_alerts(reading: SensorReadingOut) -> list[DashboardAlertOut]:
+    if not _alerts_are_active(reading):
+        return []
+
     alerts: list[DashboardAlertOut] = []
 
-    if reading.gas is not None and reading.gas >= 800:
+    gas_level = None
+    if reading.air_percent is not None:
+        gas_level = max(0.0, min(100.0, 100.0 - reading.air_percent))
+
+    if gas_level is not None and gas_level >= 60:
         alerts.append(
             DashboardAlertOut(
                 title="Gas level increased",
-                detail=f"Current gas reading is {reading.gas:.0f} ppm and needs ventilation.",
+                detail=f"Current gas level is {gas_level:.1f}% and ventilation is recommended.",
                 tone="danger",
+            )
+        )
+    elif gas_level is not None and gas_level >= 30:
+        alerts.append(
+            DashboardAlertOut(
+                title="Gas level rising",
+                detail=f"Current gas level is {gas_level:.1f}% and should be monitored.",
+                tone="warning",
             )
         )
 
@@ -144,39 +190,26 @@ def _build_devices(reading: SensorReadingOut, payload: dict[str, Any] | None = N
     if str(light_state_from_payload).upper() in {"ON", "OFF", "DIM"}:
         light_state = str(light_state_from_payload).upper()
         if light_state == "ON":
-            light_description = "Brightness boosted for low ambient light"
-            light_tone = "warning"
+            light_description = "Lights are on"
         elif light_state == "DIM":
-            light_description = "Balanced indoor lighting"
-            light_tone = "safe"
+            light_description = "Lights are on"
         else:
-            light_description = "Daylight is sufficient"
-            light_tone = "safe"
+            light_description = "Lights are off"
     elif light_value < 120:
-        light_state = "ON"
-        light_description = "Brightness boosted for low ambient light"
-        light_tone = "warning"
+        light_description = "Lights are on"
     elif light_value < 300:
-        light_state = "DIM"
-        light_description = "Balanced indoor lighting"
-        light_tone = "safe"
+        light_description = "Lights are on"
     else:
-        light_state = "OFF"
-        light_description = "Daylight is sufficient"
-        light_tone = "safe"
+        light_description = "Lights are off"
 
     return [
         DeviceStatusOut(
             label="Ventilation Fan",
             description="Auto Mode Active" if fan_is_on else "Standby Mode",
-            state="ON" if fan_is_on else "OFF",
-            tone="warning" if fan_is_on else "safe",
         ),
         DeviceStatusOut(
             label="Lights Control",
             description=light_description,
-            state=light_state,
-            tone=light_tone,
         ),
     ]
 
@@ -206,10 +239,31 @@ def _load_recent_documents(collection):
     return list(collection.limit(12).stream())
 
 
+def _build_gas_prediction(normalized: list[dict[str, Any]]) -> GasPredictionOut:
+    gas_history = [
+        item["reading"].gas
+        for item in reversed(normalized)
+        if item["reading"].gas is not None
+    ]
+    predicted_value = predict_next_gas_value(gas_history)
+
+    if predicted_value is None:
+        return GasPredictionOut(
+            predicted_value=None,
+            note="Prediction will appear after enough gas readings are available.",
+        )
+
+    return GasPredictionOut(
+        predicted_value=round(predicted_value, 1),
+        note="Predicted next gas reading based on the latest sensor trend.",
+    )
+
+
 @router.get("/dashboard", response_model=DashboardSnapshotOut)
 def get_dashboard_snapshot() -> DashboardSnapshotOut:
     db = get_db()
     collection = db.collection(settings.sensor_collection)
+    controls = get_current_device_controls(db)
 
     try:
         documents = _load_recent_documents(collection)
@@ -230,6 +284,11 @@ def get_dashboard_snapshot() -> DashboardSnapshotOut:
             alerts=alerts,
             devices=_build_devices(empty, {}),
             recent_readings=[],
+            controls=controls,
+            gas_prediction=GasPredictionOut(
+                predicted_value=None,
+                note="Prediction will appear after enough gas readings are available.",
+            ),
             status="attention",
         )
 
@@ -252,5 +311,7 @@ def get_dashboard_snapshot() -> DashboardSnapshotOut:
         alerts=alerts,
         devices=_build_devices(current, current_payload),
         recent_readings=[item["reading"] for item in normalized[:6]],
+        controls=controls,
+        gas_prediction=_build_gas_prediction(normalized),
         status=_overall_status(alerts),
     )

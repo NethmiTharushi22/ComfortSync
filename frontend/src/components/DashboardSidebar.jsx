@@ -1,8 +1,13 @@
-import { FiActivity, FiGrid, FiHome, FiLogOut, FiSettings } from "react-icons/fi";
+import { FiActivity, FiGrid, FiHome, FiLogOut, FiMessageSquare, FiSettings } from "react-icons/fi";
 
-const staticIcons = [FiHome, FiGrid, FiSettings];
+const navItems = [
+  { Icon: FiHome, label: "Dashboard", path: "/dashboard" },
+  { Icon: FiGrid, label: "Overview" },
+  { Icon: FiMessageSquare, label: "Chat", path: "/chat" },
+  { Icon: FiSettings, label: "Settings" },
+];
 
-export default function DashboardSidebar({ onLogout }) {
+export default function DashboardSidebar({ onLogout, activeTab, onNavigate }) {
   return (
     <aside className="dashboard-sidebar">
       <div className="dashboard-sidebar__brand">
@@ -11,17 +16,38 @@ export default function DashboardSidebar({ onLogout }) {
         </div>
       </div>
 
-      <div className="dashboard-sidebar__nav" aria-hidden="true">
-        {staticIcons.map((Icon, index) => (
-          <span
-            key={Icon.displayName || Icon.name || index}
-            className={`dashboard-sidebar__icon dashboard-sidebar__icon--static${
-              index === 0 ? " dashboard-sidebar__icon--active" : ""
-            }`}
-          >
-            <Icon />
-          </span>
-        ))}
+      <div className="dashboard-sidebar__nav">
+        {navItems.map(({ Icon, label, path }, index) =>
+          path ? (
+            <button
+              key={label}
+              type="button"
+              className={`dashboard-sidebar__icon dashboard-sidebar__action${
+                (label === "Dashboard" && activeTab === "Dashboard") ||
+                (label === "Chat" && activeTab === "Chat") ||
+                (index === 0 && activeTab === "Dashboard")
+                  ? " dashboard-sidebar__icon--active"
+                  : ""
+              }`}
+              onClick={() => onNavigate?.(path)}
+              aria-label={label}
+              aria-pressed={Boolean(
+                (label === "Dashboard" && activeTab === "Dashboard") ||
+                  (label === "Chat" && activeTab === "Chat"),
+              )}
+            >
+              <Icon />
+            </button>
+          ) : (
+            <span
+              key={label}
+              className="dashboard-sidebar__icon dashboard-sidebar__icon--static"
+              aria-hidden="true"
+            >
+              <Icon />
+            </span>
+          ),
+        )}
       </div>
 
       <div className="dashboard-sidebar__footer">
