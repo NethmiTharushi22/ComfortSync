@@ -194,63 +194,44 @@ const upsertChatHistorySummary = (items, history) => {
   );
 };
 
-const buildAssistantReply = ({ prompt, dashboardData, latestUpdated, aqi, gasSummary }) => {
-  const normalizedPrompt = prompt.trim().toLowerCase();
-  const current = dashboardData?.current ?? {};
-  const temperature = readNumber(current.temperature);
-  const humidity = readNumber(current.humidity);
-  const dust = readNumber(current.dust);
-  const light = readNumber(current.light);
-  const airPercent = readNumber(current.air_percent);
-
-  if (normalizedPrompt.includes("gas") || normalizedPrompt.includes("air")) {
-    return `Gas status is ${gasSummary.label.toLowerCase()} right now${
-      typeof gasSummary.value === "number" ? ` at ${gasSummary.value.toFixed(1)}%` : ""
-    }. ${gasSummary.note} Last live update was ${latestUpdated}.`;
+const handleSendChat = async (event) => {
+  event.preventDefault();
+  const trimmedMessage = chatInput.trim();
+  if (!trimmedMessage || !userEmail) {
+    return;
   }
 
-  if (normalizedPrompt.includes("dust") || normalizedPrompt.includes("aqi")) {
-    return `Current PM2.5 AQI is ${aqi.value ?? "--"} and the room is marked as ${aqi.label.toLowerCase()}. ${aqi.note}`;
-  }
+  setIsSendingChat(true);
+  try {
+    let chatId = activeChatId;
+    if (!chatId) {
+      const created = await createChatHistory(trimmedMessage);
+      chatId = created?.id || "";
+    }
+    if (!chatId) {
+      return;
+    }
 
-  if (normalizedPrompt.includes("temperature")) {
-    return `The latest room temperature is ${
-      typeof temperature === "number" ? `${temperature.toFixed(1)} C` : "not available yet"
-    }. ${
-      typeof temperature === "number" && temperature >= 30
-        ? "That is above the comfort range, so airflow or cooling would help."
-        : "It is currently within a more comfortable range."
-    }`;
-  }
+    const { data } = await api.post("/api/assistant/chat", {
+      user_email: userEmail,
+      message: trimmedMessage,
+      history_id: chatId,
+    });
 
-  if (normalizedPrompt.includes("humidity")) {
-    return `Humidity is ${
-      typeof humidity === "number" ? `${humidity.toFixed(1)}%` : "not available yet"
-    }. ${
-      typeof humidity === "number" && (humidity < 35 || humidity > 70)
-        ? "It is outside the ideal band, so the room should be monitored."
-        : "It is currently close to the ideal indoor range."
-    }`;
-  }
+    await loadChatHistory(chatId);
+    setActiveChatId(chatId);
+    setChatInput("");
+    setChatError("");
 
-  if (normalizedPrompt.includes("light")) {
-    return `Light intensity is ${
-      typeof light === "number" ? `${light.toFixed(1)} lux` : "not available yet"
-    }. ${
-      typeof light === "number" && light < 120
-        ? "The room looks dim, so switching lights on would make sense."
-        : "Lighting looks adequate from the latest reading."
-    }`;
+    // optional: surface the structured assistant insight in the UI later
+    console.log("Assistant insight:", data.insight);
+  } catch (error) {
+    setChatError(error.response?.data?.detail || "Unable to send the chat message.");
+  } finally {
+    setIsSendingChat(false);
   }
-
-  return `Here’s a quick room summary from the latest reading at ${latestUpdated}: temperature ${
-    typeof temperature === "number" ? `${temperature.toFixed(1)} C` : "--"
-  }, humidity ${
-    typeof humidity === "number" ? `${humidity.toFixed(1)}%` : "--"
-  }, air quality ${
-    typeof airPercent === "number" ? `${airPercent.toFixed(1)}%` : "--"
-  }, dust ${typeof dust === "number" ? `${dust.toFixed(1)} ug/m3` : "--"}. Ask me about gas, AQI, temperature, humidity, or lighting and I’ll focus on that.`;
 };
+
 
 export default function ChatPage() {
   const navigate = useNavigate();

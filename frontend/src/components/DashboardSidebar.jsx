@@ -1,11 +1,30 @@
-import { FiActivity, FiGrid, FiHome, FiLogOut, FiMessageSquare, FiSettings } from "react-icons/fi";
+import {
+  FiActivity,
+  FiCloud,
+  FiDroplet,
+  FiGrid,
+  FiHome,
+  FiLogOut,
+  FiMessageSquare,
+  FiSettings,
+  FiSun,
+  FiThermometer,
+  FiWind,
+} from "react-icons/fi";
 
 const navItems = [
-  { Icon: FiHome, label: "Dashboard", path: "/dashboard" },
-  { Icon: FiGrid, label: "Overview" },
-  { Icon: FiMessageSquare, label: "Chat", path: "/chat" },
-  { Icon: FiSettings, label: "Settings" },
+  { Icon: FiHome,        label: "Dashboard",   path: "/dashboard" },
+  { Icon: FiGrid,        label: "Overview" },
+  { Icon: FiMessageSquare, label: "Chat",      path: "/chat" },
+  { Icon: FiThermometer, label: "Temperature", path: "/sensors/temperature" },
+  { Icon: FiDroplet,     label: "Humidity",    path: "/sensors/humidity" },
+  { Icon: FiWind,        label: "Gas",         path: "/sensors/gas" },
+  { Icon: FiCloud,       label: "Dust",        path: "/sensors/dust" },
+  { Icon: FiSun,         label: "Light",       path: "/sensors/light" },
+  { Icon: FiSettings,    label: "Settings" },
 ];
+
+const SENSOR_LABELS = new Set(["Temperature", "Humidity", "Gas", "Dust", "Light"]);
 
 export default function DashboardSidebar({ onLogout, activeTab, onNavigate }) {
   return (
@@ -22,10 +41,11 @@ export default function DashboardSidebar({ onLogout, activeTab, onNavigate }) {
             <button
               key={label}
               type="button"
+              title={label}
               className={`dashboard-sidebar__icon dashboard-sidebar__action${
                 (label === "Dashboard" && activeTab === "Dashboard") ||
                 (label === "Chat" && activeTab === "Chat") ||
-                (index === 0 && activeTab === "Dashboard")
+                (SENSOR_LABELS.has(label) && activeTab === label)
                   ? " dashboard-sidebar__icon--active"
                   : ""
               }`}
@@ -33,7 +53,8 @@ export default function DashboardSidebar({ onLogout, activeTab, onNavigate }) {
               aria-label={label}
               aria-pressed={Boolean(
                 (label === "Dashboard" && activeTab === "Dashboard") ||
-                  (label === "Chat" && activeTab === "Chat"),
+                  (label === "Chat" && activeTab === "Chat") ||
+                  (SENSOR_LABELS.has(label) && activeTab === label),
               )}
             >
               <Icon />
@@ -41,6 +62,7 @@ export default function DashboardSidebar({ onLogout, activeTab, onNavigate }) {
           ) : (
             <span
               key={label}
+              title={label}
               className="dashboard-sidebar__icon dashboard-sidebar__icon--static"
               aria-hidden="true"
             >

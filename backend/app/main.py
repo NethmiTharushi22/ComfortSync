@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.routers.assistant import router as assistant_router
 from app.routers.chat_histories import router as chat_histories_router
 from app.routers.device_controls import router as device_controls_router
 from app.routers.sensors import router as sensors_router
@@ -29,3 +30,4 @@ def health_check() -> dict[str, str]:
 app.include_router(sensors_router, prefix="/api/sensors", tags=["sensors"])
 app.include_router(device_controls_router, prefix="/api", tags=["device-controls"])
 app.include_router(chat_histories_router, prefix="/api", tags=["chat-histories"])
+app.include_router(assistant_router, prefix="/api/assistant", tags=["assistant"])
