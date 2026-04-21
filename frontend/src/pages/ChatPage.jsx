@@ -396,38 +396,66 @@ export default function ChatPage() {
 
 const handleSendChat = async (event) => {
   event.preventDefault();
+
   const trimmedMessage = chatInput.trim();
-  if (!trimmedMessage || !userEmail) {
+  if (!trimmedMessage) {
+    return;
+  }
+
+  if (!userEmail) {
+    setChatError("Please log in to use the chat assistant.");
     return;
   }
 
   setIsSendingChat(true);
+
   try {
     let chatId = activeChatId;
+
     if (!chatId) {
       const created = await createChatHistory(trimmedMessage);
       chatId = created?.id || "";
     }
+
     if (!chatId) {
-      return;
+      throw new Error("Unable to create or load a chat session.");
     }
 
-    const { data } = await api.post("/api/assistant/chat", {
+    // Save the user message first
+    await api.post(`/api/chat-histories/${chatId}/messages`, {
       user_email: userEmail,
+      role: "user",
+      content: trimmedMessage,
+    });
+
+    // Ask the new backend agent
+    const { data: agentData } = await api.post("/api/agent/chat", {
       message: trimmedMessage,
-      history_id: chatId,
+    });
+
+    const assistantReply = agentData?.reply || "I could not generate a response.";
+
+    // Save the assistant reply
+    await api.post(`/api/chat-histories/${chatId}/messages`, {
+      user_email: userEmail,
+      role: "assistant",
+      content: assistantReply,
     });
 
     await loadChatHistory(chatId);
     setActiveChatId(chatId);
     setChatInput("");
     setChatError("");
-    setAssistantInsight(data.insight);
-    
-    // optional: surface the structured assistant insight in the UI later
-    console.log("Assistant insight:", data.insight);
+
+    // optional
+    console.log("Agent analytics:", agentData?.analytics);
+    console.log("Comfort label:", agentData?.comfort_label);
   } catch (error) {
-    setChatError(error.response?.data?.detail || "Unable to send the chat message.");
+    setChatError(
+      error.response?.data?.detail ||
+        error.message ||
+        "Unable to send the chat message."
+    );
   } finally {
     setIsSendingChat(false);
   }
