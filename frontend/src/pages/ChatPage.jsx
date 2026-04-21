@@ -194,63 +194,7 @@ const upsertChatHistorySummary = (items, history) => {
   );
 };
 
-const buildAssistantReply = ({ prompt, dashboardData, latestUpdated, aqi, gasSummary }) => {
-  const normalizedPrompt = prompt.trim().toLowerCase();
-  const current = dashboardData?.current ?? {};
-  const temperature = readNumber(current.temperature);
-  const humidity = readNumber(current.humidity);
-  const dust = readNumber(current.dust);
-  const light = readNumber(current.light);
-  const airPercent = readNumber(current.air_percent);
 
-  if (normalizedPrompt.includes("gas") || normalizedPrompt.includes("air")) {
-    return `Gas status is ${gasSummary.label.toLowerCase()} right now${
-      typeof gasSummary.value === "number" ? ` at ${gasSummary.value.toFixed(1)}%` : ""
-    }. ${gasSummary.note} Last live update was ${latestUpdated}.`;
-  }
-
-  if (normalizedPrompt.includes("dust") || normalizedPrompt.includes("aqi")) {
-    return `Current PM2.5 AQI is ${aqi.value ?? "--"} and the room is marked as ${aqi.label.toLowerCase()}. ${aqi.note}`;
-  }
-
-  if (normalizedPrompt.includes("temperature")) {
-    return `The latest room temperature is ${
-      typeof temperature === "number" ? `${temperature.toFixed(1)} C` : "not available yet"
-    }. ${
-      typeof temperature === "number" && temperature >= 30
-        ? "That is above the comfort range, so airflow or cooling would help."
-        : "It is currently within a more comfortable range."
-    }`;
-  }
-
-  if (normalizedPrompt.includes("humidity")) {
-    return `Humidity is ${
-      typeof humidity === "number" ? `${humidity.toFixed(1)}%` : "not available yet"
-    }. ${
-      typeof humidity === "number" && (humidity < 35 || humidity > 70)
-        ? "It is outside the ideal band, so the room should be monitored."
-        : "It is currently close to the ideal indoor range."
-    }`;
-  }
-
-  if (normalizedPrompt.includes("light")) {
-    return `Light intensity is ${
-      typeof light === "number" ? `${light.toFixed(1)} lux` : "not available yet"
-    }. ${
-      typeof light === "number" && light < 120
-        ? "The room looks dim, so switching lights on would make sense."
-        : "Lighting looks adequate from the latest reading."
-    }`;
-  }
-
-  return `Here’s a quick room summary from the latest reading at ${latestUpdated}: temperature ${
-    typeof temperature === "number" ? `${temperature.toFixed(1)} C` : "--"
-  }, humidity ${
-    typeof humidity === "number" ? `${humidity.toFixed(1)}%` : "--"
-  }, air quality ${
-    typeof airPercent === "number" ? `${airPercent.toFixed(1)}%` : "--"
-  }, dust ${typeof dust === "number" ? `${dust.toFixed(1)} ug/m3` : "--"}. Ask me about gas, AQI, temperature, humidity, or lighting and I’ll focus on that.`;
-};
 
 export default function ChatPage() {
   const navigate = useNavigate();
@@ -266,6 +210,7 @@ export default function ChatPage() {
   const [isCreatingChat, setIsCreatingChat] = useState(false);
   const [isSendingChat, setIsSendingChat] = useState(false);
   const [deletingChatId, setDeletingChatId] = useState("");
+  const [assistantInsight, setAssistantInsight] = useState(null);
 
   const userEmail = user?.email ?? "";
 
@@ -449,61 +394,72 @@ export default function ChatPage() {
     }
   };
 
-  const handleSendChat = async (event) => {
-    event.preventDefault();
+const handleSendChat = async (event) => {
+  event.preventDefault();
 
-    const trimmedMessage = chatInput.trim();
-    if (!trimmedMessage || !userEmail) {
-      return;
+  const trimmedMessage = chatInput.trim();
+  if (!trimmedMessage) {
+    return;
+  }
+
+  if (!userEmail) {
+    setChatError("Please log in to use the chat assistant.");
+    return;
+  }
+
+  setIsSendingChat(true);
+
+  try {
+    let chatId = activeChatId;
+
+    if (!chatId) {
+      const created = await createChatHistory(trimmedMessage);
+      chatId = created?.id || "";
     }
 
-    setIsSendingChat(true);
-
-    try {
-      let chatId = activeChatId;
-      if (!chatId) {
-        const created = await createChatHistory(trimmedMessage);
-        chatId = created?.id || "";
-      }
-
-      if (!chatId) {
-        return;
-      }
-
-      const { data: userHistory } = await api.post(`/api/chat-histories/${chatId}/messages`, {
-        user_email: userEmail,
-        role: "user",
-        content: trimmedMessage,
-      });
-
-      setActiveChat(userHistory);
-      setChatHistories((current) => upsertChatHistorySummary(current, userHistory));
-
-      const assistantReply = buildAssistantReply({
-        prompt: trimmedMessage,
-        dashboardData,
-        latestUpdated,
-        aqi,
-        gasSummary,
-      });
-
-      const { data: assistantHistory } = await api.post(`/api/chat-histories/${chatId}/messages`, {
-        user_email: userEmail,
-        role: "assistant",
-        content: assistantReply,
-      });
-
-      setActiveChat(assistantHistory);
-      setActiveChatId(assistantHistory.id);
-      setChatHistories((current) => upsertChatHistorySummary(current, assistantHistory));
-      setChatInput("");
-      setChatError("");
-    } catch (error) {
-      setChatError(error.response?.data?.detail || "Unable to send the chat message.");
-    } finally {
-      setIsSendingChat(false);
+    if (!chatId) {
+      throw new Error("Unable to create or load a chat session.");
     }
-  };
+
+    // Save the user message first
+    await api.post(`/api/chat-histories/${chatId}/messages`, {
+      user_email: userEmail,
+      role: "user",
+      content: trimmedMessage,
+    });
+
+    // Ask the new backend agent
+    const { data: agentData } = await api.post("/api/agent/chat", {
+      message: trimmedMessage,
+    });
+
+    const assistantReply = agentData?.reply || "I could not generate a response.";
+
+    // Save the assistant reply
+    await api.post(`/api/chat-histories/${chatId}/messages`, {
+      user_email: userEmail,
+      role: "assistant",
+      content: assistantReply,
+    });
+
+    await loadChatHistory(chatId);
+    setActiveChatId(chatId);
+    setChatInput("");
+    setChatError("");
+
+    // optional
+    console.log("Agent analytics:", agentData?.analytics);
+    console.log("Comfort label:", agentData?.comfort_label);
+  } catch (error) {
+    setChatError(
+      error.response?.data?.detail ||
+        error.message ||
+        "Unable to send the chat message."
+    );
+  } finally {
+    setIsSendingChat(false);
+  }
+};
 
   return (
     <main className="dashboard-root">
