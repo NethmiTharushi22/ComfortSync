@@ -68,6 +68,7 @@ const readNumber = (value) =>
   typeof value === "number" && Number.isFinite(value) ? value : null;
 
 const formatMetricValue = (value) => (typeof value === "number" ? value : "--");
+
 const buildControlPayload = (nextValues, currentValues) => {
   return {
     mode: nextValues.mode ?? currentValues.controlMode,
@@ -521,6 +522,7 @@ function ChatPanel({
 export default function Dashboard() {
   const navigate = useNavigate();
   const { user, isAuthenticated, logout } = useAuth();
+
   const [dashboardData, setDashboardData] = useState(() => readDashboardCache());
   const [dashboardError, setDashboardError] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -538,6 +540,9 @@ export default function Dashboard() {
   const [isCreatingChat, setIsCreatingChat] = useState(false);
   const [isSendingChat, setIsSendingChat] = useState(false);
   const [deletingChatId, setDeletingChatId] = useState("");
+
+  const [comfortData, setComfortData] = useState(null);
+  const [comfortLoading, setComfortLoading] = useState(false);
 
   const userEmail = user?.email ?? "";
 
@@ -573,12 +578,33 @@ export default function Dashboard() {
     }
   };
 
+  const fetchComfortData = async () => {
+    try {
+      setComfortLoading(true);
+
+      const response = await fetch("http://localhost:8000/api/comfort/latest");
+      if (!response.ok) {
+        throw new Error("Failed to fetch comfort prediction");
+      }
+
+      const data = await response.json();
+      setComfortData(data);
+    } catch (error) {
+      console.error("Comfort fetch error:", error);
+      setComfortData(null);
+    } finally {
+      setComfortLoading(false);
+    }
+  };
+
   useEffect(() => {
     let isMounted = true;
 
     const loadDashboard = async () => {
       try {
         await fetchDashboard();
+        await fetchComfortData();
+
         if (!isMounted) {
           return;
         }
@@ -691,6 +717,7 @@ export default function Dashboard() {
   const handleRefresh = async () => {
     try {
       await fetchDashboard({ manual: true });
+      await fetchComfortData();
     } catch {}
   };
 
@@ -760,13 +787,20 @@ export default function Dashboard() {
       setActiveChat(userHistory);
       setChatHistories((current) => upsertChatHistorySummary(current, userHistory));
 
-      const assistantReply = buildAssistantReply({
-        prompt: trimmedMessage,
-        dashboardData,
-        latestUpdated,
-        aqi,
-        gasSummary,
+      const agentResponse = await fetch("http://localhost:8000/api/agent/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ message: trimmedMessage }),
       });
+
+      if (!agentResponse.ok) {
+        throw new Error("Failed to get agent reply");
+      }
+
+      const agentData = await agentResponse.json();
+      const assistantReply = agentData.reply;
 
       const { data: assistantHistory } = await api.post(`/api/chat-histories/${chatId}/messages`, {
         user_email: userEmail,
@@ -834,8 +868,42 @@ export default function Dashboard() {
     }
   };
 
+  const getComfortColor = (label) => {
+    switch (label) {
+      case "Comfortable":
+        return "text-green-600";
+      case "Moderate":
+        return "text-yellow-600";
+      case "Uncomfortable":
+        return "text-orange-600";
+      case "Hazardous":
+        return "text-red-600";
+      default:
+        return "text-gray-600";
+    }
+  };
+
+  const getComfortReason = (inputs) => {
+    if (!inputs) return "No explanation available.";
+
+    const reasons = [];
+
+    if (inputs.temperature > 28) reasons.push("high temperature");
+    if (inputs.humidity > 60) reasons.push("high humidity");
+    if (inputs.light_lux < 300) reasons.push("low lighting");
+    if (inputs.dust_concentration > 250) reasons.push("elevated dust");
+    if (inputs.air_percent < 60) reasons.push("poor air quality");
+
+    if (reasons.length === 0) {
+      return "Conditions are generally within a comfortable range.";
+    }
+
+    return `Main factors: ${reasons.join(", ")}.`;
+  };
+
   const liveReading = dashboardData?.current;
   const previousReading = dashboardData?.recent_readings?.[1];
+
   const realtime = {
     temperature: readNumber(liveReading?.temperature),
     humidity: readNumber(liveReading?.humidity),
@@ -844,19 +912,23 @@ export default function Dashboard() {
     light: readNumber(liveReading?.light),
     dust: readNumber(liveReading?.dust),
   };
+
   const alertItems = dashboardData?.alerts ?? [];
   const hasAlerts =
     Boolean(dashboardError) ||
     alertItems.some((alert) => alert.tone === "warning" || alert.tone === "danger");
+
   const deviceItems = dashboardData?.devices ?? [];
   const latestUpdated = formatTimestamp(liveReading?.recorded_at);
   const aqi = getPm25AqiSummary(liveReading?.dust);
   const gasSummary = getGasSummary(liveReading?.air_percent);
   const gasPrediction = dashboardData?.gas_prediction;
   const manualControlsDisabled = controlMode !== "MANUAL" || isSavingControl;
+
   const aqiGaugeStyle = {
     "--aqi-angle": `${Math.min(((aqi.value ?? 0) / 500) * 180, 180)}deg`,
   };
+
   const gasGaugeStyle = {
     "--aqi-angle": `${Math.min(((gasSummary.value ?? 0) / 100) * 180, 180)}deg`,
   };
@@ -1001,6 +1073,34 @@ export default function Dashboard() {
                 </div>
               </article>
 
+              <article className="dashboard-card">
+                <div className="dashboard-card__header">
+                  <div>
+                    <p className="dashboard-card-label">Machine learning insight</p>
+                    <h2>AI Comfort Prediction</h2>
+                  </div>
+                  <FiZap className="dashboard-card__trend" />
+                </div>
+
+                {comfortLoading ? (
+                  <p className="dashboard-card-label">Loading prediction...</p>
+                ) : comfortData ? (
+                  <div className="dashboard-insight-list">
+                    <article className="dashboard-insight-item">
+                      <div>
+                        <strong className={getComfortColor(comfortData.comfort_label)}>
+                          {comfortData.comfort_label}
+                        </strong>
+                        <p>{getComfortReason(comfortData.inputs)}</p>
+                      </div>
+                      <span>{formatTimestamp(comfortData.raw_document?.recorded_at)}</span>
+                    </article>
+                  </div>
+                ) : (
+                  <p className="dashboard-card-label">Prediction unavailable</p>
+                )}
+              </article>
+
               <article className="dashboard-card dashboard-card--controls">
                 <div className="dashboard-card__header">
                   <div>
@@ -1104,10 +1204,9 @@ export default function Dashboard() {
                     </div>
 
                     <p className="dashboard-light-card__meta">
-                      {isSavingControl
-                        ? "Saving control settings..."
-                        : deviceItems[1]?.description ?? "Waiting for live light data."}
-                      : {formatMetricValue(realtime.light)} lux
+                      {`${deviceItems[1]?.description ?? "Waiting for live light data."} : ${formatMetricValue(
+                        realtime.light,
+                      )} lux`}
                     </p>
                   </article>
                 </div>
@@ -1217,6 +1316,25 @@ export default function Dashboard() {
             />
           ) : null}
 
+          {activeTab === "Chat" ? (
+            <ChatPanel
+              histories={chatHistories}
+              activeChat={activeChat}
+              activeChatId={activeChatId}
+              chatInput={chatInput}
+              onInputChange={setChatInput}
+              onQuickAction={setChatInput}
+              onCreateChat={handleCreateChat}
+              onSelectChat={loadChatHistory}
+              onDeleteChat={handleDeleteChat}
+              onSend={handleSendChat}
+              isLoading={isChatLoading}
+              isCreating={isCreatingChat}
+              isSending={isSendingChat}
+              deletingChatId={deletingChatId}
+              chatError={chatError}
+            />
+          ) : null}
         </section>
       </section>
     </main>
