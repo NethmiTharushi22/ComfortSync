@@ -402,14 +402,47 @@ const handleSendChat = async (event) => {
     return;
   }
 
-  if (!userEmail) {
-    setChatError("Please log in to use the chat assistant.");
-    return;
-  }
-
   setIsSendingChat(true);
+  setChatError("");
 
   try {
+    // Guest mode: no login, no saved history
+    if (!userEmail) {
+      const guestUserMessage = {
+        id: `guest-user-${Date.now()}`,
+        role: "user",
+        content: trimmedMessage,
+        created_at: new Date().toISOString(),
+      };
+
+      setActiveChat((current) => ({
+        id: current?.id || "guest-session",
+        title: current?.title || "Guest chat",
+        messages: [...(current?.messages || []), guestUserMessage],
+      }));
+
+      const { data: agentData } = await api.post("/api/agent/chat", {
+        message: trimmedMessage,
+      });
+
+      const guestAssistantMessage = {
+        id: `guest-assistant-${Date.now()}`,
+        role: "assistant",
+        content: agentData?.reply || "I could not generate a response.",
+        created_at: new Date().toISOString(),
+      };
+
+      setActiveChat((current) => ({
+        id: current?.id || "guest-session",
+        title: current?.title || "Guest chat",
+        messages: [...(current?.messages || []), guestAssistantMessage],
+      }));
+
+      setChatInput("");
+      return;
+    }
+
+    // Logged-in mode: save history in backend
     let chatId = activeChatId;
 
     if (!chatId) {
@@ -421,21 +454,19 @@ const handleSendChat = async (event) => {
       throw new Error("Unable to create or load a chat session.");
     }
 
-    // Save the user message first
     await api.post(`/api/chat-histories/${chatId}/messages`, {
       user_email: userEmail,
       role: "user",
       content: trimmedMessage,
     });
 
-    // Ask the new backend agent
     const { data: agentData } = await api.post("/api/agent/chat", {
       message: trimmedMessage,
     });
 
-    const assistantReply = agentData?.reply || "I could not generate a response.";
+    const assistantReply =
+      agentData?.reply || "I could not generate a response.";
 
-    // Save the assistant reply
     await api.post(`/api/chat-histories/${chatId}/messages`, {
       user_email: userEmail,
       role: "assistant",
@@ -445,11 +476,6 @@ const handleSendChat = async (event) => {
     await loadChatHistory(chatId);
     setActiveChatId(chatId);
     setChatInput("");
-    setChatError("");
-
-    // optional
-    console.log("Agent analytics:", agentData?.analytics);
-    console.log("Comfort label:", agentData?.comfort_label);
   } catch (error) {
     setChatError(
       error.response?.data?.detail ||
