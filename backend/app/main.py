@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.routers.auth import router as auth_router
 from app.routers.chat_histories import router as chat_histories_router
 from app.routers.device_controls import router as device_controls_router
 from app.routers.sensors import router as sensors_router
@@ -28,6 +29,7 @@ def health_check() -> dict[str, str]:
     return {"status": "ok"}
 
 
+app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(sensors_router, prefix="/api/sensors", tags=["sensors"])
 app.include_router(device_controls_router, prefix="/api", tags=["device-controls"])
 app.include_router(chat_histories_router, prefix="/api", tags=["chat-histories"])

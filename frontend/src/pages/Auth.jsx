@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { FiArrowLeft, FiCheck, FiEye, FiEyeOff, FiX } from "react-icons/fi";
 import api from "../api/axios";
 import { useAuth } from "../context/AuthContext";
@@ -172,12 +172,6 @@ function LoginView({ goSignup, goForgot }) {
         <button type="button" className="auth-link-btn auth-link-btn--em" onClick={goSignup}>
           Create account
         </button>
-      </p>
-      <p className="auth-switch">
-        Just checking the UI?{" "}
-        <Link to="/dashboard" className="auth-link-btn auth-link-btn--em">
-          Open dashboard preview
-        </Link>
       </p>
     </div>
   );

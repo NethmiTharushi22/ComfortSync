@@ -546,6 +546,11 @@ export default function Dashboard() {
 
   const userEmail = user?.email ?? "";
 
+  const handleLogout = async () => {
+    await logout();
+    navigate("/auth", { replace: true });
+  };
+
   const fetchDashboard = async ({ manual = false } = {}) => {
     if (manual) {
       setIsRefreshing(true);
@@ -997,7 +1002,7 @@ export default function Dashboard() {
   return (
     <main className="dashboard-root">
       <section className="dashboard-shell">
-        <DashboardSidebar onLogout={logout} activeTab="Dashboard" onNavigate={navigate} />
+        <DashboardSidebar onLogout={handleLogout} activeTab="Dashboard" onNavigate={navigate} />
 
         <section className="dashboard-main">
           <DashboardHeader
