@@ -3,6 +3,9 @@ uvicorn[standard]
 pydantic-settings
 firebase-admin
 email-validator
+passlib[bcrypt]
+bcrypt==4.0.1
+python-jose[cryptography]
 joblib
 numpy
 pandas

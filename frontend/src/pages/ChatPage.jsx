@@ -214,6 +214,11 @@ export default function ChatPage() {
 
   const userEmail = user?.email ?? "";
 
+  const handleLogout = async () => {
+    await logout();
+    navigate("/auth", { replace: true });
+  };
+
   const fetchDashboard = async () => {
     try {
       const { data } = await api.get("/api/sensors/dashboard", {
@@ -398,7 +403,7 @@ const handleSendChat = async (event) => {
   event.preventDefault();
 
   const trimmedMessage = chatInput.trim();
-  if (!trimmedMessage) {
+  if (!trimmedMessage || !userEmail) {
     return;
   }
 
@@ -406,43 +411,6 @@ const handleSendChat = async (event) => {
   setChatError("");
 
   try {
-    // Guest mode: no login, no saved history
-    if (!userEmail) {
-      const guestUserMessage = {
-        id: `guest-user-${Date.now()}`,
-        role: "user",
-        content: trimmedMessage,
-        created_at: new Date().toISOString(),
-      };
-
-      setActiveChat((current) => ({
-        id: current?.id || "guest-session",
-        title: current?.title || "Guest chat",
-        messages: [...(current?.messages || []), guestUserMessage],
-      }));
-
-      const { data: agentData } = await api.post("/api/agent/chat", {
-        message: trimmedMessage,
-      });
-
-      const guestAssistantMessage = {
-        id: `guest-assistant-${Date.now()}`,
-        role: "assistant",
-        content: agentData?.reply || "I could not generate a response.",
-        created_at: new Date().toISOString(),
-      };
-
-      setActiveChat((current) => ({
-        id: current?.id || "guest-session",
-        title: current?.title || "Guest chat",
-        messages: [...(current?.messages || []), guestAssistantMessage],
-      }));
-
-      setChatInput("");
-      return;
-    }
-
-    // Logged-in mode: save history in backend
     let chatId = activeChatId;
 
     if (!chatId) {
@@ -491,7 +459,7 @@ const handleSendChat = async (event) => {
     <main className="dashboard-root">
       <section className="dashboard-shell">
         <DashboardSidebar
-          onLogout={logout}
+          onLogout={handleLogout}
           activeTab="Chat"
           onNavigate={navigate}
         />
