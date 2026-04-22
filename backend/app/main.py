@@ -6,6 +6,7 @@ from app.routers.device_controls import router as device_controls_router
 from app.routers.sensors import router as sensors_router
 from app.routers.comfort_prediction import router as comfort_prediction_router
 from app.routers.agent_chat import router as agent_chat_router
+from app.routers.forecast import router as forecast_router
 
 app = FastAPI(title="ComfortSync API")
 
@@ -33,3 +34,4 @@ app.include_router(device_controls_router, prefix="/api", tags=["device-controls
 app.include_router(chat_histories_router, prefix="/api", tags=["chat-histories"])
 app.include_router(comfort_prediction_router, prefix="/api/comfort", tags=["comfort"])
 app.include_router(agent_chat_router, prefix="/api/agent", tags=["agent"])
+app.include_router(forecast_router, prefix="/api/forecast", tags=["forecast"])
