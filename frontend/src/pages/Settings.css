@@ -1,7 +1,9 @@
 .settings-page {
   display: grid;
   gap: 22px;
+  width: 100%;
   max-width: 1120px;
+  min-width: 0;
 }
 
 .settings-hero,
