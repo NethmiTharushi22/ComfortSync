@@ -9,7 +9,13 @@ def get_groq_client():
     return Groq(api_key=api_key)
 
 
-def generate_agent_reply(user_message: str, latest_reading: dict, comfort_label: str, analytics: dict) -> str:
+def generate_agent_reply(
+    user_message: str,
+    latest_reading: dict,
+    comfort_label: str,
+    analytics: dict,
+    forecast: dict,
+) -> str:
     client = get_groq_client()
 
     question_type = "general"
@@ -19,6 +25,8 @@ def generate_agent_reply(user_message: str, latest_reading: dict, comfort_label:
         question_type = "explanation"
     elif "trend" in lower_q or "analytics" in lower_q or "average" in lower_q:
         question_type = "analytics"
+    elif "forecast" in lower_q or "next" in lower_q or "expected" in lower_q or "future" in lower_q:
+        question_type = "forecast"
     elif "what should i do" in lower_q or "suggest" in lower_q or "recommend" in lower_q:
         question_type = "action"
     elif "safe" in lower_q or "comfortable" in lower_q or "status" in lower_q:
@@ -27,7 +35,7 @@ def generate_agent_reply(user_message: str, latest_reading: dict, comfort_label:
     system_prompt = """
 You are ComfortSync, an intelligent indoor comfort assistant for an IoT dashboard.
 
-You help users understand live room conditions using sensor readings, analytics, and a comfort prediction model.
+You help users understand live room conditions using sensor readings, analytics, a comfort prediction model, and short-term forecasting.
 
 Response style:
 - Sound natural, polished, and easy to understand.
@@ -48,6 +56,7 @@ Rules:
 - Only use the information provided.
 - Do not invent values or hidden causes.
 - If the user asks for analytics, mention trends clearly.
+- If the user asks for forecast, use the forecast summary directly.
 - If the user asks "why", explain the main causes.
 - If the user asks "what should I do", give practical recommendations.
 - If the room is comfortable, say that clearly and positively.
@@ -55,7 +64,7 @@ Rules:
 Default response structure:
 1. Start with the overall room condition.
 2. Briefly explain the main reason.
-3. Add one useful action or insight if relevant.
+3. Add one useful action, analytics insight, or forecast insight if relevant.
 """
 
     user_prompt = f"""
@@ -73,6 +82,9 @@ Predicted comfort label:
 
 Analytics summary:
 {analytics}
+
+Forecast summary:
+{forecast}
 """
 
     response = client.chat.completions.create(

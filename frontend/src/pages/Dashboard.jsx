@@ -39,7 +39,7 @@ const hourlySeries = [
 ];
 
 const clampPercent = (value, max) => `${Math.min((value / max) * 100, 100)}%`;
-const POLL_INTERVAL_MS = 5000;
+const POLL_INTERVAL_MS = 3600000;
 const DASHBOARD_CACHE_KEY = "comfortsync.dashboard.snapshot";
 
 const readDashboardCache = () => {

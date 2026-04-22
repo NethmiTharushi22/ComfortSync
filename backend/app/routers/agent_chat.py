@@ -1,8 +1,13 @@
 from fastapi import APIRouter, HTTPException
 
-from app.services.agent_analytics import get_latest_reading, get_recent_readings, build_analytics_summary
+from app.services.agent_analytics import (
+    get_latest_reading,
+    get_recent_readings,
+    build_analytics_summary,
+)
 from app.services.agent_llm_service import generate_agent_reply
 from app.services.comfort_model_service import predict_comfort_label
+from app.services.forecast_service import build_forecast_summary
 
 router = APIRouter()
 
@@ -42,6 +47,7 @@ def agent_chat(payload: dict):
 
         recent = get_recent_readings(limit=10, collection_name="sensor_readings")
         analytics = build_analytics_summary(recent)
+        forecast = build_forecast_summary(limit=10, collection_name="sensor_readings")
 
         reply = generate_agent_reply(
             user_message=message,
@@ -58,15 +64,23 @@ def agent_chat(payload: dict):
             },
             comfort_label=comfort_label,
             analytics=analytics,
+            forecast=forecast,
         )
 
         return {
             "reply": reply,
             "comfort_label": comfort_label,
             "analytics": analytics,
+            "forecast": forecast,
         }
 
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        message = str(e)
+        if "429" in message or "quota" in message.lower():
+            raise HTTPException(
+                status_code=503,
+                detail="Live data is temporarily unavailable because the database quota has been exceeded. Please try again shortly."
+            )
+        raise HTTPException(status_code=500, detail=message)
