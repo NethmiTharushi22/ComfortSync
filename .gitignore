@@ -18,3 +18,5 @@ backend/.env
 Thumbs.db
 .vscode/
 
+# Secrets (DO NOT COMMIT)
+backend/secrets/

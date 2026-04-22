@@ -1,11 +1,13 @@
 from fastapi import APIRouter, HTTPException, Query
 
 from app.ml.temporal_trend import run_temporal_trend_analysis
+from app.ml.anomaly_detection import run_anomaly_detection
 
 router = APIRouter(
     prefix="/analysis",
     tags=["ML Analysis"]
 )
+
 
 
 @router.get("/temporal-trend")
@@ -25,6 +27,28 @@ def temporal_trend_analysis(
 
         result = run_temporal_trend_analysis(
             target_fields=fields,
+            limit=limit,
+            csv_file_name=csv_file_name
+        )
+
+        return {
+            "success": True,
+            "data": result
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+@router.get("/anomaly-detection")
+def anomaly_detection(
+    limit: int = Query(5000),
+    csv_file_name: str = Query("sensor_data_export.csv")
+):
+    try:
+        result = run_anomaly_detection(
             limit=limit,
             csv_file_name=csv_file_name
         )
