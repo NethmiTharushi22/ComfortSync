@@ -1,9 +1,12 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 
 import { useAuth } from "./context/AuthContext";
+import Analytics from "./pages/Analytics";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import ChatPage from "./pages/ChatPage";
+import Settings from "./pages/Settings";
+
 
 function ProtectedRoute({ isAuthenticated, children }) {
   if (!isAuthenticated) {
@@ -33,6 +36,22 @@ function App() {
         element={
           <ProtectedRoute isAuthenticated={isAuthenticated}>
             <ChatPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/analytics"
+        element={
+          <ProtectedRoute isAuthenticated={isAuthenticated}>
+            <Analytics />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/settings"
+        element={
+          <ProtectedRoute isAuthenticated={isAuthenticated}>
+            <Settings />
           </ProtectedRoute>
         }
       />
