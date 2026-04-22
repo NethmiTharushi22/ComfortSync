@@ -2,9 +2,9 @@ import { FiActivity, FiGrid, FiHome, FiLogOut, FiMessageSquare, FiSettings } fro
 
 const navItems = [
   { Icon: FiHome, label: "Dashboard", path: "/dashboard" },
-  { Icon: FiGrid, label: "Overview" },
+  { Icon: FiGrid, label: "Analytics", path: "/analytics" },
   { Icon: FiMessageSquare, label: "Chat", path: "/chat" },
-  { Icon: FiSettings, label: "Settings" },
+  { Icon: FiSettings, label: "Settings", path: "/settings" },
 ];
 
 export default function DashboardSidebar({ onLogout, activeTab, onNavigate }) {
@@ -24,7 +24,9 @@ export default function DashboardSidebar({ onLogout, activeTab, onNavigate }) {
               type="button"
               className={`dashboard-sidebar__icon dashboard-sidebar__action${
                 (label === "Dashboard" && activeTab === "Dashboard") ||
+                (label === "Analytics" && activeTab === "Analytics") ||
                 (label === "Chat" && activeTab === "Chat") ||
+                (label === "Settings" && activeTab === "Settings") ||
                 (index === 0 && activeTab === "Dashboard")
                   ? " dashboard-sidebar__icon--active"
                   : ""
@@ -33,7 +35,9 @@ export default function DashboardSidebar({ onLogout, activeTab, onNavigate }) {
               aria-label={label}
               aria-pressed={Boolean(
                 (label === "Dashboard" && activeTab === "Dashboard") ||
-                  (label === "Chat" && activeTab === "Chat"),
+                  (label === "Analytics" && activeTab === "Analytics") ||
+                  (label === "Chat" && activeTab === "Chat") ||
+                  (label === "Settings" && activeTab === "Settings"),
               )}
             >
               <Icon />

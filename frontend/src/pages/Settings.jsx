@@ -1,6 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/axios'
+import DashboardHeader from '../components/DashboardHeader'
+import DashboardSidebar from '../components/DashboardSidebar'
+import './Dashboard.css'
 import './Settings.css'
 
 const PASSWORD_RULES = [
@@ -109,7 +113,8 @@ function PasswordInput({ id, name, placeholder, value, onChange, required }) {
 }
 
 export default function Settings() {
-  const { user, updateUser } = useAuth()
+  const navigate = useNavigate()
+  const { user, isAuthenticated, updateUser, logout } = useAuth()
   const fileInputRef = useRef(null)
 
   const [form, setForm] = useState({
@@ -317,263 +322,299 @@ export default function Settings() {
     isNewPasswordStrong &&
     pwForm.new_password === pwForm.confirm_password
 
+  const handleLogout = async () => {
+    await logout()
+    navigate('/auth', { replace: true })
+  }
+
   return (
-    <div className="settings-page">
-      <section className="settings-hero">
-        <div className="settings-hero__copy">
-          <p className="settings-kicker">Profile center</p>
-          <h2>Make your account feel intentional.</h2>
-          <p className="settings-hero__text">
-            Update your personal details, profile image, and password from one place without changing any of the underlying account fields.
-          </p>
-          <div className="settings-pill-row">
-            <span className="settings-pill">Primary email</span>
-            <a href={`mailto:${user?.email}`} className="email-link">{user?.email}</a>
-          </div>
-        </div>
+    <main className="dashboard-root">
+      <section className="dashboard-shell">
+        <DashboardSidebar onLogout={handleLogout} activeTab="Settings" onNavigate={navigate} />
 
-        <aside className="settings-hero__panel">
-          <div className={`settings-avatar settings-avatar--hero${avatarUploading ? ' avatar--uploading' : ''}`}>
-            {displayAvatar ? <img src={displayAvatar} alt="avatar" /> : <span>{initials}</span>}
-            {avatarUploading && <div className="avatar-spinner" />}
-          </div>
-
-          <div className="settings-hero__meta">
-            <strong>{user?.name || 'User profile'}</strong>
-            <span>@{form.username || 'username'}</span>
-          </div>
-
-          <input
-            ref={fileInputRef}
-            id="avatar-file-input"
-            type="file"
-            accept="image/jpeg,image/png,image/webp,image/gif"
-            style={{ display: 'none' }}
-            onChange={handleFileSelected}
+        <section className="dashboard-main">
+          <DashboardHeader
+            isAuthenticated={isAuthenticated}
+            userEmail={user?.email}
+            hasAlerts={false}
+            alertItems={[]}
+            latestAlertAt={null}
           />
 
-          <div className="avatar-area">
-            <button
-              className="avatar-btn avatar-btn--solid"
-              type="button"
-              onClick={handleAvatarClick}
-              disabled={avatarUploading}
-            >
-              {avatarUploading ? 'Uploading...' : 'Change photo'}
-            </button>
-
-            <button
-              className="avatar-btn avatar-btn--outline avatar-btn--danger"
-              type="button"
-              onClick={handleRemoveAvatar}
-              disabled={avatarUploading}
-            >
-              Remove
-            </button>
+          <div className="dashboard-tabs" role="tablist" aria-label="Dashboard views">
+            {['Dashboard', 'Analytics', 'Chat'].map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                role="tab"
+                aria-selected={false}
+                className="dashboard-tab"
+                onClick={() => navigate(`/${tab.toLowerCase()}`)}
+              >
+                {tab}
+              </button>
+            ))}
           </div>
 
-          <p className="settings-email-notice">
-            Supported: JPEG, PNG, WebP, GIF. Max size 5 MB.
-          </p>
-        </aside>
-      </section>
-
-      {avatarMsg.text && (
-        <p className={`avatar-msg ${avatarMsg.type === 'success' ? 'settings-success' : 'settings-error'}`}>
-          {avatarMsg.text}
-        </p>
-      )}
-
-      <div className="settings-card">
-        <section className="settings-panel">
-          <div className="settings-section-heading">
-            <p className="settings-section-heading__eyebrow">Profile details</p>
-            <h2>Basic information</h2>
-            <p>Update your personal information. Your address will never be publicly available.</p>
-          </div>
-
-          <form className="settings-form" onSubmit={handleSave} noValidate>
-            <div className="field-row">
-              <label className="settings-label">
-                Full name <span className="required-star">*</span>
-              </label>
-              <div className="name-inputs">
-                <div className="input-group">
-                  <input
-                    id="settings-first-name"
-                    name="first_name"
-                    type="text"
-                    placeholder="First name"
-                    value={form.first_name}
-                    onChange={handleChange}
-                    className={fieldErrors.first_name ? 'input--error' : ''}
-                  />
-                  {fieldErrors.first_name && <span className="field-error">{fieldErrors.first_name}</span>}
-                </div>
-                <div className="input-group">
-                  <input
-                    id="settings-last-name"
-                    name="last_name"
-                    type="text"
-                    placeholder="Last name"
-                    value={form.last_name}
-                    onChange={handleChange}
-                  />
+          <div className="settings-page">
+            <section className="settings-hero">
+              <div className="settings-hero__copy">
+                <p className="settings-kicker">Profile center</p>
+                <h2>Make your account feel intentional.</h2>
+                <p className="settings-hero__text">
+                  Update your personal details, profile image, and password from one place without changing any of the underlying account fields.
+                </p>
+                <div className="settings-pill-row">
+                  <span className="settings-pill">Primary email</span>
+                  <a href={`mailto:${user?.email}`} className="email-link">{user?.email}</a>
                 </div>
               </div>
-            </div>
 
-            <div className="field-row">
-              <label htmlFor="settings-username" className="settings-label">
-                Username <span className="required-star">*</span>
-              </label>
-              <div className="single-input">
-                <div className="input-group">
-                  <input
-                    id="settings-username"
-                    name="username"
-                    type="text"
-                    placeholder="username"
-                    value={form.username}
-                    onChange={handleChange}
-                    className={fieldErrors.username ? 'input--error' : ''}
-                  />
-                  {fieldErrors.username && <span className="field-error">{fieldErrors.username}</span>}
+              <aside className="settings-hero__panel">
+                <div className={`settings-avatar settings-avatar--hero${avatarUploading ? ' avatar--uploading' : ''}`}>
+                  {displayAvatar ? <img src={displayAvatar} alt="avatar" /> : <span>{initials}</span>}
+                  {avatarUploading && <div className="avatar-spinner" />}
                 </div>
-              </div>
-            </div>
 
-            <div className="field-row">
-              <label htmlFor="settings-email" className="settings-label">Email</label>
-              <div className="full-input">
+                <div className="settings-hero__meta">
+                  <strong>{user?.name || 'User profile'}</strong>
+                  <span>@{form.username || 'username'}</span>
+                </div>
+
                 <input
-                  id="settings-email"
-                  name="email"
-                  type="email"
-                  value={form.email}
-                  disabled
+                  ref={fileInputRef}
+                  id="avatar-file-input"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  style={{ display: 'none' }}
+                  onChange={handleFileSelected}
                 />
-              </div>
-            </div>
 
-            <div className="field-row">
-              <label htmlFor="settings-phone" className="settings-label">Phone</label>
-              <div className="full-input">
-                <div className="input-group">
-                  <input
-                    id="settings-phone"
-                    name="phone"
-                    type="tel"
-                    inputMode="numeric"
-                    placeholder="10-digit phone number"
-                    value={form.phone}
-                    onChange={handlePhoneChange}
-                    maxLength={10}
-                    className={fieldErrors.phone ? 'input--error' : ''}
-                  />
-                  {fieldErrors.phone && <span className="field-error">{fieldErrors.phone}</span>}
+                <div className="avatar-area">
+                  <button
+                    className="avatar-btn avatar-btn--solid"
+                    type="button"
+                    onClick={handleAvatarClick}
+                    disabled={avatarUploading}
+                  >
+                    {avatarUploading ? 'Uploading...' : 'Change photo'}
+                  </button>
+
+                  <button
+                    className="avatar-btn avatar-btn--outline avatar-btn--danger"
+                    type="button"
+                    onClick={handleRemoveAvatar}
+                    disabled={avatarUploading}
+                  >
+                    Remove
+                  </button>
                 </div>
-              </div>
-            </div>
 
-            {profileMsg.text && (
-              <p className={profileMsg.type === 'success' ? 'settings-success' : 'settings-error'}>
-                {profileMsg.text}
+                <p className="settings-email-notice">
+                  Supported: JPEG, PNG, WebP, GIF. Max size 5 MB.
+                </p>
+              </aside>
+            </section>
+
+            {avatarMsg.text && (
+              <p className={`avatar-msg ${avatarMsg.type === 'success' ? 'settings-success' : 'settings-error'}`}>
+                {avatarMsg.text}
               </p>
             )}
 
-            <div className="settings-actions">
-              <button
-                id="settings-save-btn"
-                type="submit"
-                className="save-btn"
-                disabled={saving}
-              >
-                {saving ? 'Saving...' : 'Save Changes'}
-              </button>
-            </div>
-          </form>
-        </section>
+            <div className="settings-card">
+              <section className="settings-panel">
+                <div className="settings-section-heading">
+                  <p className="settings-section-heading__eyebrow">Profile details</p>
+                  <h2>Basic information</h2>
+                  <p>Update your personal information. Your address will never be publicly available.</p>
+                </div>
 
-        <section className="settings-panel settings-panel--password">
-          <div className="settings-section-heading">
-            <p className="settings-section-heading__eyebrow">Security</p>
-            <h2>Change password</h2>
-            <p>Use a strong password with all requirements completed below. Click the eye icon to show or hide.</p>
+                <form className="settings-form" onSubmit={handleSave} noValidate>
+                  <div className="field-row">
+                    <label className="settings-label">
+                      Full name <span className="required-star">*</span>
+                    </label>
+                    <div className="name-inputs">
+                      <div className="input-group">
+                        <input
+                          id="settings-first-name"
+                          name="first_name"
+                          type="text"
+                          placeholder="First name"
+                          value={form.first_name}
+                          onChange={handleChange}
+                          className={fieldErrors.first_name ? 'input--error' : ''}
+                        />
+                        {fieldErrors.first_name && <span className="field-error">{fieldErrors.first_name}</span>}
+                      </div>
+                      <div className="input-group">
+                        <input
+                          id="settings-last-name"
+                          name="last_name"
+                          type="text"
+                          placeholder="Last name"
+                          value={form.last_name}
+                          onChange={handleChange}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="field-row">
+                    <label htmlFor="settings-username" className="settings-label">
+                      Username <span className="required-star">*</span>
+                    </label>
+                    <div className="single-input">
+                      <div className="input-group">
+                        <input
+                          id="settings-username"
+                          name="username"
+                          type="text"
+                          placeholder="username"
+                          value={form.username}
+                          onChange={handleChange}
+                          className={fieldErrors.username ? 'input--error' : ''}
+                        />
+                        {fieldErrors.username && <span className="field-error">{fieldErrors.username}</span>}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="field-row">
+                    <label htmlFor="settings-email" className="settings-label">Email</label>
+                    <div className="full-input">
+                      <input
+                        id="settings-email"
+                        name="email"
+                        type="email"
+                        value={form.email}
+                        disabled
+                      />
+                    </div>
+                  </div>
+
+                  <div className="field-row">
+                    <label htmlFor="settings-phone" className="settings-label">Phone</label>
+                    <div className="full-input">
+                      <div className="input-group">
+                        <input
+                          id="settings-phone"
+                          name="phone"
+                          type="tel"
+                          inputMode="numeric"
+                          placeholder="10-digit phone number"
+                          value={form.phone}
+                          onChange={handlePhoneChange}
+                          maxLength={10}
+                          className={fieldErrors.phone ? 'input--error' : ''}
+                        />
+                        {fieldErrors.phone && <span className="field-error">{fieldErrors.phone}</span>}
+                      </div>
+                    </div>
+                  </div>
+
+                  {profileMsg.text && (
+                    <p className={profileMsg.type === 'success' ? 'settings-success' : 'settings-error'}>
+                      {profileMsg.text}
+                    </p>
+                  )}
+
+                  <div className="settings-actions">
+                    <button
+                      id="settings-save-btn"
+                      type="submit"
+                      className="save-btn"
+                      disabled={saving}
+                    >
+                      {saving ? 'Saving...' : 'Save Changes'}
+                    </button>
+                  </div>
+                </form>
+              </section>
+
+              <section className="settings-panel settings-panel--password">
+                <div className="settings-section-heading">
+                  <p className="settings-section-heading__eyebrow">Security</p>
+                  <h2>Change password</h2>
+                  <p>Use a strong password with all requirements completed below. Click the eye icon to show or hide.</p>
+                </div>
+
+                <form className="settings-form" onSubmit={handleChangePassword} noValidate>
+                  <div className="field-row">
+                    <label htmlFor="settings-current-pw" className="settings-label">Current password</label>
+                    <div className="full-input">
+                      <div className="input-group">
+                        <PasswordInput
+                          id="settings-current-pw"
+                          name="current_password"
+                          placeholder="Enter current password"
+                          value={pwForm.current_password}
+                          onChange={handlePwChange}
+                          required
+                        />
+                        {pwErrors.current_password && <span className="field-error">{pwErrors.current_password}</span>}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="field-row">
+                    <label htmlFor="settings-new-pw" className="settings-label">New password</label>
+                    <div className="full-input">
+                      <div className="input-group">
+                        <PasswordInput
+                          id="settings-new-pw"
+                          name="new_password"
+                          placeholder="At least 8 characters"
+                          value={pwForm.new_password}
+                          onChange={handlePwChange}
+                          required
+                        />
+                        {pwErrors.new_password && <span className="field-error">{pwErrors.new_password}</span>}
+                        <PasswordRequirements password={pwForm.new_password} />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="field-row">
+                    <label htmlFor="settings-confirm-pw" className="settings-label">Confirm new</label>
+                    <div className="full-input">
+                      <div className="input-group">
+                        <PasswordInput
+                          id="settings-confirm-pw"
+                          name="confirm_password"
+                          placeholder="Repeat new password"
+                          value={pwForm.confirm_password}
+                          onChange={handlePwChange}
+                          required
+                        />
+                        {pwErrors.confirm_password && <span className="field-error">{pwErrors.confirm_password}</span>}
+                      </div>
+                    </div>
+                  </div>
+
+                  {pwMsg.text && (
+                    <p className={pwMsg.type === 'success' ? 'settings-success' : 'settings-error'}>
+                      {pwMsg.text}
+                    </p>
+                  )}
+
+                  <div className="settings-actions">
+                    <button
+                      id="settings-change-pw-btn"
+                      type="submit"
+                      className="save-btn"
+                      disabled={changingPw || !isPasswordFormValid}
+                    >
+                      {changingPw ? 'Updating...' : 'Change Password'}
+                    </button>
+                  </div>
+                </form>
+              </section>
+            </div>
           </div>
-
-          <form className="settings-form" onSubmit={handleChangePassword} noValidate>
-            <div className="field-row">
-              <label htmlFor="settings-current-pw" className="settings-label">Current password</label>
-              <div className="full-input">
-                <div className="input-group">
-                  <PasswordInput
-                    id="settings-current-pw"
-                    name="current_password"
-                    placeholder="Enter current password"
-                    value={pwForm.current_password}
-                    onChange={handlePwChange}
-                    required
-                  />
-                  {pwErrors.current_password && <span className="field-error">{pwErrors.current_password}</span>}
-                </div>
-              </div>
-            </div>
-
-            <div className="field-row">
-              <label htmlFor="settings-new-pw" className="settings-label">New password</label>
-              <div className="full-input">
-                <div className="input-group">
-                  <PasswordInput
-                    id="settings-new-pw"
-                    name="new_password"
-                    placeholder="At least 8 characters"
-                    value={pwForm.new_password}
-                    onChange={handlePwChange}
-                    required
-                  />
-                  {pwErrors.new_password && <span className="field-error">{pwErrors.new_password}</span>}
-                  <PasswordRequirements password={pwForm.new_password} />
-                </div>
-              </div>
-            </div>
-
-            <div className="field-row">
-              <label htmlFor="settings-confirm-pw" className="settings-label">Confirm new</label>
-              <div className="full-input">
-                <div className="input-group">
-                  <PasswordInput
-                    id="settings-confirm-pw"
-                    name="confirm_password"
-                    placeholder="Repeat new password"
-                    value={pwForm.confirm_password}
-                    onChange={handlePwChange}
-                    required
-                  />
-                  {pwErrors.confirm_password && <span className="field-error">{pwErrors.confirm_password}</span>}
-                </div>
-              </div>
-            </div>
-
-            {pwMsg.text && (
-              <p className={pwMsg.type === 'success' ? 'settings-success' : 'settings-error'}>
-                {pwMsg.text}
-              </p>
-            )}
-
-            <div className="settings-actions">
-              <button
-                id="settings-change-pw-btn"
-                type="submit"
-                className="save-btn"
-                disabled={changingPw || !isPasswordFormValid}
-              >
-                {changingPw ? 'Updating...' : 'Change Password'}
-              </button>
-            </div>
-          </form>
         </section>
-      </div>
-    </div>
+      </section>
+    </main>
   )
 }

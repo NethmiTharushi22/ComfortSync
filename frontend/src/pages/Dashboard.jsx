@@ -1066,11 +1066,18 @@ const loadDashboard = async () => {
                 key={tab}
                 type="button"
                 role="tab"
-                aria-selected={tab === "Chat" ? false : activeTab === tab}
+                aria-selected={activeTab === tab}
                 className={`dashboard-tab ${
-                  tab !== "Chat" && activeTab === tab ? "dashboard-tab--active" : ""
+                  activeTab === tab ? "dashboard-tab--active" : ""
                 }`}
-                onClick={() => (tab === "Chat" ? navigate("/chat") : setActiveTab(tab))}
+                onClick={() => {
+                  if (tab === "Dashboard") {
+                    setActiveTab(tab);
+                    return;
+                  }
+
+                  navigate(`/${tab.toLowerCase()}`);
+                }}
               >
                 {tab}
               </button>
@@ -1390,14 +1397,6 @@ const loadDashboard = async () => {
                 </div>
               </article>
             </section>
-          ) : null}
-
-          {activeTab === "Analytics" ? (
-            <Analytics
-              forecast={forecast}
-              hourlySeries={hourlySeries}
-              clampPercent={clampPercent}
-            />
           ) : null}
 
           {activeTab === "Chat" ? (
