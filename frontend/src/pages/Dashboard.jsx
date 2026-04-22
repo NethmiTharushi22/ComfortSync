@@ -1019,11 +1019,18 @@ export default function Dashboard() {
                 key={tab}
                 type="button"
                 role="tab"
-                aria-selected={tab === "Chat" ? false : activeTab === tab}
+                aria-selected={activeTab === tab}
                 className={`dashboard-tab ${
-                  tab !== "Chat" && activeTab === tab ? "dashboard-tab--active" : ""
+                  activeTab === tab ? "dashboard-tab--active" : ""
                 }`}
-                onClick={() => (tab === "Chat" ? navigate("/chat") : setActiveTab(tab))}
+                onClick={() => {
+                  if (tab === "Dashboard") {
+                    setActiveTab(tab);
+                    return;
+                  }
+
+                  navigate(`/${tab.toLowerCase()}`);
+                }}
               >
                 {tab}
               </button>
@@ -1078,7 +1085,7 @@ export default function Dashboard() {
                 </div>
               </article>
 
-              <article className="dashboard-card">
+              <article className="dashboard-card dashboard-card--predictions">
                 <div className="dashboard-card__header">
                   <div>
                     <p className="dashboard-card-label">Machine learning insight</p>
@@ -1311,14 +1318,6 @@ export default function Dashboard() {
                 </div>
               </article>
             </section>
-          ) : null}
-
-          {activeTab === "Analytics" ? (
-            <Analytics
-              forecast={forecast}
-              hourlySeries={hourlySeries}
-              clampPercent={clampPercent}
-            />
           ) : null}
 
           {activeTab === "Chat" ? (
