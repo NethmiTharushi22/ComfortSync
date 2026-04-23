@@ -21,7 +21,6 @@ import "./Dashboard.css";
 
 const tabs = ["Dashboard", "Analytics", "ML Analytics", "Chat"];
 
-
 const staticForecast = [
   { label: "Temperature", value: "+1.8 C", note: "Likely to rise by evening" },
   { label: "Humidity", value: "+4%", note: "Indoor moisture trend increasing" },
@@ -710,28 +709,28 @@ export default function Dashboard() {
     }
   };
 
-  const [forecastData, setForecastData] = useState(null);
-  const [forecastLoading, setForecastLoading] = useState(false);
+  const [fiveMinForecast, setFiveMinForecast] = useState(null);
+  const [fiveMinLoading, setFiveMinLoading] = useState(false);
 
-  const fetchForecastData = async () => {
+  const fetchFiveMinForecast = async () => {
     try {
-      setForecastLoading(true);
+      setFiveMinLoading(true);
 
       const response = await fetch(
         "http://localhost:8000/api/forecast/next-5min",
       );
 
       if (!response.ok) {
-        throw new Error("Failed to fetch forecast prediction");
+        throw new Error("Failed to fetch 5-min forecast");
       }
 
       const data = await response.json();
-      setForecastData(data.forecast);
+      setFiveMinForecast(data.forecast);
     } catch (error) {
-      console.error("Forecast fetch error:", error);
-      setForecastData(null);
+      console.error("5-min forecast error:", error);
+      setFiveMinForecast(null);
     } finally {
-      setForecastLoading(false);
+      setFiveMinLoading(false);
     }
   };
 
@@ -755,74 +754,75 @@ export default function Dashboard() {
   };
 
   const getTrendSymbol = (trend) => {
-  if (trend === "increasing") return "↑";
-  if (trend === "decreasing") return "↓";
-  return "→";
-};
+    if (trend === "increasing") return "↑";
+    if (trend === "decreasing") return "↓";
+    return "→";
+  };
 
-const getForecastLabel = (key) => {
-  switch (key) {
-    case "temperature":
-      return "Temperature";
-    case "humidity":
-      return "Humidity";
-    case "light_lux":
-      return "Light";
-    case "air_percent":
-      return "Air Quality";
-    case "dust_concentration":
-      return "Dust";
-    default:
-      return key;
-  }
-};
-
-const fetchForecastData = async () => {
-  try {
-    setForecastLoading(true);
-    const response = await fetch("http://localhost:8000/api/forecast/latest");
-    if (!response.ok) {
-      throw new Error("Failed to fetch forecast data");
+  const getForecastLabel = (key) => {
+    switch (key) {
+      case "temperature":
+        return "Temperature";
+      case "humidity":
+        return "Humidity";
+      case "light_lux":
+        return "Light";
+      case "air_percent":
+        return "Air Quality";
+      case "dust_concentration":
+        return "Dust";
+      default:
+        return key;
     }
-    const data = await response.json();
-    setForecastData(data.forecast);
-  } catch (error) {
-    console.error("Forecast fetch error:", error);
-    setForecastData(null);
-  } finally {
-    setForecastLoading(false);
-  }
-};
+  };
+
+  const fetchForecastData = async () => {
+    try {
+      setForecastLoading(true);
+      const response = await fetch("http://localhost:8000/api/forecast/latest");
+      if (!response.ok) {
+        throw new Error("Failed to fetch forecast data");
+      }
+      const data = await response.json();
+      setForecastData(data.forecast);
+    } catch (error) {
+      console.error("Forecast fetch error:", error);
+      setForecastData(null);
+    } finally {
+      setForecastLoading(false);
+    }
+  };
 
   useEffect(() => {
-  let isMounted = true;
+    let isMounted = true;
 
-const loadDashboard = async () => {
-  try {
-    await Promise.all([
-      fetchDashboard(),
-      fetchComfortData(),
-      fetchForecastData(),
-    ]);
+    const loadDashboard = async () => {
+      try {
+        await Promise.all([
+          fetchDashboard(),
+          fetchComfortData(),
+          fetchForecastData(),
+          fetchFiveMinForecast(),
+        ]);
 
-    if (!isMounted) {
-      return;
-    }
-  } catch {
-    if (!isMounted) {
-      return;
-    }
-  }
-};
+        if (!isMounted) {
+          return;
+        }
+      } catch {
+        if (!isMounted) {
+          return;
+        }
+      }
+    };
 
-  loadDashboard();
-  const intervalId = window.setInterval(loadDashboard, POLL_INTERVAL_MS);
+    loadDashboard();
+    const intervalId = window.setInterval(loadDashboard, POLL_INTERVAL_MS);
 
-  return () => {
-    isMounted = false;
-    window.clearInterval(intervalId);
-  };
-}, []);
+    return () => {
+      isMounted = false;
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   const loadChatHistory = async (chatId) => {
     if (!chatId || !userEmail) {
@@ -1172,8 +1172,8 @@ const loadDashboard = async () => {
     },
   ];
 
-  const prediction5min = forecastData?.prediction_5min ?? {};
-  const latestPredictionSource = forecastData?.latest ?? {};
+  const prediction5min = fiveMinForecast?.prediction_5min ?? {};
+  const latestPredictionSource = fiveMinForecast?.latest ?? {};
 
   const forecast = [
     {
@@ -1253,37 +1253,37 @@ const loadDashboard = async () => {
           >
             {tabs.map((tab) => (
               <button
-                  key={tab}
-                  type="button"
-                  role="tab"
-                  aria-selected={activeTab === tab}
-                  className={`dashboard-tab ${
-                    activeTab === tab ? "dashboard-tab--active" : ""
-                  }`}
-                  onClick={() => {
-                    if (tab === "Dashboard") {
-                      navigate("/dashboard");
-                      return;
-                    }
+                key={tab}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tab}
+                className={`dashboard-tab ${
+                  activeTab === tab ? "dashboard-tab--active" : ""
+                }`}
+                onClick={() => {
+                  if (tab === "Dashboard") {
+                    navigate("/dashboard");
+                    return;
+                  }
 
-                    if (tab === "Analytics") {
-                      navigate("/analytics");
-                      return;
-                    }
+                  if (tab === "Analytics") {
+                    navigate("/analytics");
+                    return;
+                  }
 
-                    if (tab === "ML Analytics") {
-                      navigate("/ml-analytics");
-                      return;
-                    }
+                  if (tab === "ML Analytics") {
+                    navigate("/ml-analytics");
+                    return;
+                  }
 
-                    if (tab === "Chat") {
-                      navigate("/chat");
-                      return;
-                    }
-                  }}
-                >
-                  {tab}
-</button>
+                  if (tab === "Chat") {
+                    navigate("/chat");
+                    return;
+                  }
+                }}
+              >
+                {tab}
+              </button>
             ))}
           </div>
 
@@ -1353,7 +1353,7 @@ const loadDashboard = async () => {
                 </div>
 
                 {comfortLoading && !comfortData ? (
-                 <p className="dashboard-card-label">Loading prediction...</p>
+                  <p className="dashboard-card-label">Loading prediction...</p>
                 ) : comfortData ? (
                   <div className="dashboard-insight-list">
                     <article className="dashboard-insight-item">
@@ -1385,17 +1385,19 @@ const loadDashboard = async () => {
                 </div>
 
                 {forecastLoading && !forecastData ? (
-                 <p className="dashboard-card-label">Loading forecast...</p>
+                  <p className="dashboard-card-label">Loading forecast...</p>
                 ) : forecastData ? (
                   <div className="dashboard-insight-list">
                     {Object.entries(forecastData).map(([key, value]) => (
                       <article key={key} className="dashboard-insight-item">
                         <div>
                           <strong>
-                            {getForecastLabel(key)} {getTrendSymbol(value.trend)}
+                            {getForecastLabel(key)}{" "}
+                            {getTrendSymbol(value.trend)}
                           </strong>
                           <p>
-                            Current: {value.current ?? "--"} | Next: {value.predicted_next ?? "--"}
+                            Current: {value.current ?? "--"} | Next:{" "}
+                            {value.predicted_next ?? "--"}
                           </p>
                         </div>
                         <span>{value.trend}</span>
@@ -1500,7 +1502,7 @@ const loadDashboard = async () => {
                   <FiTrendingUp className="dashboard-card__trend" />
                 </div>
 
-                {forecastLoading ? (
+                {fiveMinLoading  ? (
                   <p className="dashboard-card-label">Loading forecast...</p>
                 ) : (
                   <div className="dashboard-insight-list">
