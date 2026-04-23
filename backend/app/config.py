@@ -1,6 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 class Settings(BaseSettings):
     app_name: str = "ComfortSync API"
     debug: str | bool = True
@@ -8,7 +7,7 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
     remember_me_expire_minutes: int = 60 * 24 * 30
-    sensor_collection: str = "sensor_readings"
+    sensor_collection: str = "sensor_data"
     device_controls_collection: str = "device_controls"
     device_controls_document_id: str = "current"
     chat_history_collection: str = "chat_histories"
@@ -20,6 +19,7 @@ class Settings(BaseSettings):
     smtp_port: int = 587
     smtp_user: str | None = None
     smtp_password: str | None = None
+    groq_api_key: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=".env",

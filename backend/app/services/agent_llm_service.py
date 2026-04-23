@@ -1,9 +1,15 @@
-import os
-from groq import Groq
+from app.config import settings
 
 
 def get_groq_client():
-    api_key = os.getenv("GROQ_API_KEY")
+    try:
+        from groq import Groq
+    except ImportError as exc:
+        raise RuntimeError(
+            "Groq SDK is not installed. Add `groq` to backend dependencies to enable agent chat."
+        ) from exc
+
+    api_key = settings.groq_api_key
     if not api_key:
         raise RuntimeError("GROQ_API_KEY is not set")
     return Groq(api_key=api_key)
