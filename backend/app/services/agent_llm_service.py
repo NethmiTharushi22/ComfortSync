@@ -27,8 +27,12 @@ def generate_agent_reply(
         question_type = "analytics"
     elif "forecast" in lower_q or "next" in lower_q or "expected" in lower_q or "future" in lower_q:
         question_type = "forecast"
+    elif "compare" in lower_q or "difference" in lower_q or "versus" in lower_q or "vs" in lower_q:
+        question_type = "comparison"
     elif "what should i do" in lower_q or "suggest" in lower_q or "recommend" in lower_q:
         question_type = "action"
+    elif "where" in lower_q or "which section" in lower_q or "what should i look at" in lower_q:
+        question_type = "navigation"
     elif "safe" in lower_q or "comfortable" in lower_q or "status" in lower_q:
         question_type = "status"
 
@@ -36,6 +40,19 @@ def generate_agent_reply(
 You are ComfortSync, an intelligent indoor comfort assistant for an IoT dashboard.
 
 You help users understand live room conditions using sensor readings, analytics, a comfort prediction model, and short-term forecasting.
+
+The dashboard has these sections:
+- AI Comfort Prediction
+- Next reading outlook
+- Device controls
+- Gas level gauge
+- EPA PM2.5 AQI
+- Temperature trend
+- Humidity trend
+- Air quality trend
+- Dust levels
+- Light levels
+- Current vs forecast
 
 Response style:
 - Sound natural, polished, and easy to understand.
@@ -45,26 +62,21 @@ Response style:
 - Do not list every number unless the user asks for detailed analytics.
 - Highlight the most important issue first.
 - When useful, end with a practical suggestion.
-
-Preferred tone:
-- calm
-- helpful
-- slightly polished for a university project presentation
-- professional but human
+- When relevant, explicitly mention which dashboard section the user should check.
 
 Rules:
 - Only use the information provided.
 - Do not invent values or hidden causes.
-- If the user asks for analytics, mention trends clearly.
-- If the user asks for forecast, use the forecast summary directly.
-- If the user asks "why", explain the main causes.
-- If the user asks "what should I do", give practical recommendations.
+- If the user asks for analytics, mention the relevant trend section.
+- If the user asks for forecast, mention the Current vs Forecast or Next reading outlook section when relevant.
+- If the user asks why the room is uncomfortable, refer to the most relevant dashboard sections.
+- If the user asks what to do, give practical recommendations.
 - If the room is comfortable, say that clearly and positively.
 
-Default response structure:
-1. Start with the overall room condition.
-2. Briefly explain the main reason.
-3. Add one useful action, analytics insight, or forecast insight if relevant.
+Good examples of dashboard guidance:
+- "You can confirm that in the Temperature trend section."
+- "The Current vs Forecast card shows that comparison more clearly."
+- "The AI Comfort Prediction card is the best place to start."
 """
 
     user_prompt = f"""
@@ -93,7 +105,7 @@ Forecast summary:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
-        temperature=0.65,
+        temperature=0.6,
     )
 
     return response.choices[0].message.content.strip()

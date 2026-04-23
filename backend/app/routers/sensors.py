@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from firebase_admin import firestore
 
 from app.db import get_db
@@ -228,7 +228,7 @@ def _load_recent_documents(collection):
         try:
             documents = list(
                 collection.order_by(field_name, direction=firestore.Query.DESCENDING)
-                .limit(12)
+                .limit(200)
                 .stream()
             )
             if documents:
@@ -236,7 +236,17 @@ def _load_recent_documents(collection):
         except Exception:
             continue
 
-    return list(collection.limit(12).stream())
+    return list(collection.limit(200).stream())
+
+
+def _matches_filters(payload: dict[str, Any], sensor_id: str | None, data_mode: str | None) -> bool:
+    if sensor_id and str(payload.get("sensor_id", "")).strip() != sensor_id:
+        return False
+
+    if data_mode and str(payload.get("data_mode", "")).strip() != data_mode:
+        return False
+
+    return True
 
 
 def _build_gas_prediction(normalized: list[dict[str, Any]]) -> GasPredictionOut:
@@ -260,7 +270,10 @@ def _build_gas_prediction(normalized: list[dict[str, Any]]) -> GasPredictionOut:
 
 
 @router.get("/dashboard", response_model=DashboardSnapshotOut)
-def get_dashboard_snapshot() -> DashboardSnapshotOut:
+def get_dashboard_snapshot(
+    sensor_id: str | None = Query(default=None),
+    data_mode: str | None = Query(default=None),
+) -> DashboardSnapshotOut:
     db = get_db()
     collection = db.collection(settings.sensor_collection)
     controls = get_current_device_controls(db)
@@ -292,15 +305,45 @@ def get_dashboard_snapshot() -> DashboardSnapshotOut:
             status="attention",
         )
 
-    normalized = [
-        {"reading": _normalize_reading(document), "payload": document.to_dict() or {}}
-        for document in documents
-    ]
+    normalized = []
+    for document in documents:
+        payload = document.to_dict() or {}
+        if not _matches_filters(payload, sensor_id, data_mode):
+            continue
+        normalized.append(
+            {
+                "reading": _normalize_reading(document),
+                "payload": payload,
+            }
+        )
+
     normalized.sort(
         key=lambda item: item["reading"].recorded_at
         or datetime.min.replace(tzinfo=timezone.utc).isoformat(),
         reverse=True,
     )
+
+    if not normalized:
+        empty = SensorReadingOut(id="latest")
+        alerts = [
+            DashboardAlertOut(
+                title="No matching sensor data",
+                detail="No records matched the selected filter values.",
+                tone="warning",
+            )
+        ]
+        return DashboardSnapshotOut(
+            current=empty,
+            alerts=alerts,
+            devices=_build_devices(empty, {}),
+            recent_readings=[],
+            controls=controls,
+            gas_prediction=GasPredictionOut(
+                predicted_value=None,
+                note="Prediction will appear after enough gas readings are available.",
+            ),
+            status="attention",
+        )
 
     current = normalized[0]["reading"]
     current_payload = normalized[0]["payload"]
@@ -310,7 +353,7 @@ def get_dashboard_snapshot() -> DashboardSnapshotOut:
         current=current,
         alerts=alerts,
         devices=_build_devices(current, current_payload),
-        recent_readings=[item["reading"] for item in normalized[:6]],
+        recent_readings=[item["reading"] for item in normalized[:30]],
         controls=controls,
         gas_prediction=_build_gas_prediction(normalized),
         status=_overall_status(alerts),

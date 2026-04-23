@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
     remember_me_expire_minutes: int = 60 * 24 * 30
-    sensor_collection: str = "sensor_readings"
+    sensor_collection: str = "sensor_data"
     device_controls_collection: str = "device_controls"
     device_controls_document_id: str = "current"
     chat_history_collection: str = "chat_histories"
