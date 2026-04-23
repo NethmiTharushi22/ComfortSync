@@ -19,7 +19,7 @@ import DashboardHeader from "../components/DashboardHeader";
 import DashboardSidebar from "../components/DashboardSidebar";
 import "./Dashboard.css";
 
-const tabs = ["Dashboard", "Analytics", "Chat"];
+const tabs = ["Dashboard", "Analytics", "ML Analytics", "Chat"];
 
 
 const staticForecast = [
@@ -1063,24 +1063,37 @@ const loadDashboard = async () => {
           <div className="dashboard-tabs" role="tablist" aria-label="Dashboard views">
             {tabs.map((tab) => (
               <button
-                key={tab}
-                type="button"
-                role="tab"
-                aria-selected={activeTab === tab}
-                className={`dashboard-tab ${
-                  activeTab === tab ? "dashboard-tab--active" : ""
-                }`}
-                onClick={() => {
-                  if (tab === "Dashboard") {
-                    setActiveTab(tab);
-                    return;
-                  }
+                  key={tab}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === tab}
+                  className={`dashboard-tab ${
+                    activeTab === tab ? "dashboard-tab--active" : ""
+                  }`}
+                  onClick={() => {
+                    if (tab === "Dashboard") {
+                      navigate("/dashboard");
+                      return;
+                    }
 
-                  navigate(`/${tab.toLowerCase()}`);
-                }}
-              >
-                {tab}
-              </button>
+                    if (tab === "Analytics") {
+                      navigate("/analytics");
+                      return;
+                    }
+
+                    if (tab === "ML Analytics") {
+                      navigate("/ml-analytics");
+                      return;
+                    }
+
+                    if (tab === "Chat") {
+                      navigate("/chat");
+                      return;
+                    }
+                  }}
+                >
+                  {tab}
+</button>
             ))}
           </div>
 
