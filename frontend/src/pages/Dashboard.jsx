@@ -35,6 +35,14 @@ const staticForecast = [
     note: "Windows open scenario detected",
   },
 ];
+// convert raw135 value to percentage and clamp between 0-100%
+const convertMqToPercent = (mqValue) => {
+  if (typeof mqValue !== "number" || Number.isNaN(mqValue)) {
+    return null;
+  }
+
+  return 100 - (mqValue / 4095) * 100;
+};
 
 const clampPercent = (value, max) => `${Math.min((value / max) * 100, 100)}%`;
 const POLL_INTERVAL_MS = 3600000;
@@ -1197,13 +1205,16 @@ export default function Dashboard() {
       ),
     },
     {
-      label: "Gas level",
-      value: formatPredictionValue(prediction5min.mq135_5min),
+      label: "Air Quality",
+      value: formatPredictionValue(
+        convertMqToPercent(prediction5min.mq135_5min),
+        "%",
+      ),
       note: buildPredictionNote(
-        "Gas level",
-        readNumber(latestPredictionSource.mq135_raw),
-        readNumber(prediction5min.mq135_5min),
-        "units",
+        "Air quality",
+        convertMqToPercent(readNumber(latestPredictionSource.mq135_raw)),
+        convertMqToPercent(readNumber(prediction5min.mq135_5min)),
+        "%",
       ),
     },
     {
@@ -1502,7 +1513,7 @@ export default function Dashboard() {
                   <FiTrendingUp className="dashboard-card__trend" />
                 </div>
 
-                {fiveMinLoading  ? (
+                {fiveMinLoading ? (
                   <p className="dashboard-card-label">Loading forecast...</p>
                 ) : (
                   <div className="dashboard-insight-list">
