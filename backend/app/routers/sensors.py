@@ -162,13 +162,35 @@ def _build_alerts(reading: SensorReadingOut) -> list[DashboardAlertOut]:
 
     alerts.append(
         DashboardAlertOut(
-            title="Realtime sync active",
-            detail="Dashboard values are being read from the latest backend sensor data.",
+            title="Scheduled sync active",
+            detail="Dashboard values reflect the latest backend sensor data from the most recent scheduled refresh.",
             tone="safe",
         )
     )
 
     return alerts
+
+
+def _coerce_device_state(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+
+    if isinstance(value, (int, float)):
+        if value == 1:
+            return True
+        if value == 0:
+            return False
+
+    if isinstance(value, str):
+        normalized = value.strip().upper()
+        if normalized in {"1", "ON", "TRUE", "HIGH"}:
+            return True
+        if normalized in {"0", "OFF", "FALSE", "LOW"}:
+            return False
+        if normalized == "DIM":
+            return True
+
+    return None
 
 
 def _build_devices(reading: SensorReadingOut, payload: dict[str, Any] | None = None) -> list[DeviceStatusOut]:
@@ -181,35 +203,22 @@ def _build_devices(reading: SensorReadingOut, payload: dict[str, Any] | None = N
     light_value = reading.light if reading.light is not None else 0
     fan_state = _first_present(payload, FIELD_ALIASES["fan_status"])
     light_state_from_payload = _first_present(payload, FIELD_ALIASES["light_status"])
-
-    if str(fan_state).upper() in {"ON", "OFF"}:
-        fan_is_on = str(fan_state).upper() == "ON"
-    else:
+    fan_is_on = _coerce_device_state(fan_state)
+    if fan_is_on is None:
         fan_is_on = fan_on
 
-    if str(light_state_from_payload).upper() in {"ON", "OFF", "DIM"}:
-        light_state = str(light_state_from_payload).upper()
-        if light_state == "ON":
-            light_description = "Lights are on"
-        elif light_state == "DIM":
-            light_description = "Lights are on"
-        else:
-            light_description = "Lights are off"
-    elif light_value < 120:
-        light_description = "Lights are on"
-    elif light_value < 300:
-        light_description = "Lights are on"
-    else:
-        light_description = "Lights are off"
+    light_is_on = _coerce_device_state(light_state_from_payload)
+    if light_is_on is None:
+        light_is_on = light_value < 300
 
     return [
         DeviceStatusOut(
             label="Ventilation Fan",
-            description="Auto Mode Active" if fan_is_on else "Standby Mode",
+            description="ON" if fan_is_on else "OFF",
         ),
         DeviceStatusOut(
             label="Lights Control",
-            description=light_description,
+            description="ON" if light_is_on else "OFF",
         ),
     ]
 

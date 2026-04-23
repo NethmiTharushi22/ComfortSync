@@ -1,6 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 class Settings(BaseSettings):
     app_name: str = "ComfortSync API"
     debug: str | bool = True
@@ -20,6 +19,7 @@ class Settings(BaseSettings):
     smtp_port: int = 587
     smtp_user: str | None = None
     smtp_password: str | None = None
+    groq_api_key: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=".env",

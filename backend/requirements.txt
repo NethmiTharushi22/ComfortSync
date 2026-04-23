@@ -10,3 +10,4 @@ joblib
 numpy
 pandas
 scikit-learn
+groq
