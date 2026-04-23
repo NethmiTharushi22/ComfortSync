@@ -18,7 +18,7 @@ import DashboardSidebar from "../components/DashboardSidebar";
 import "./Dashboard.css";
 import "./ChatPage.css";
 
-const POLL_INTERVAL_MS = 60 * 60 * 1000;
+const POLL_INTERVAL_MS = 3600000;
 const DASHBOARD_CACHE_KEY = "comfortsync.dashboard.snapshot";
 
 const readDashboardCache = () => {

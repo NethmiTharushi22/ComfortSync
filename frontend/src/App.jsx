@@ -6,6 +6,7 @@ import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import ChatPage from "./pages/ChatPage";
 import Settings from "./pages/Settings";
+import MLAnalytics  from "./pages/MLAnalytics";
 
 
 function ProtectedRoute({ isAuthenticated, children }) {
@@ -55,6 +56,15 @@ function App() {
           </ProtectedRoute>
         }
       />
+
+      <Route
+  path="/ml-analytics"
+  element={
+    <ProtectedRoute isAuthenticated={isAuthenticated}>
+      <MLAnalytics />
+    </ProtectedRoute>
+  }
+/>
     </Routes>
   );
 }

@@ -19,7 +19,8 @@ import DashboardHeader from "../components/DashboardHeader";
 import DashboardSidebar from "../components/DashboardSidebar";
 import "./Dashboard.css";
 
-const tabs = ["Dashboard", "Analytics", "Chat"];
+const tabs = ["Dashboard", "Analytics", "ML Analytics", "Chat"];
+
 
 const staticForecast = [
   { label: "Temperature", value: "+1.8 C", note: "Likely to rise by evening" },
@@ -37,7 +38,7 @@ const staticForecast = [
 ];
 
 const clampPercent = (value, max) => `${Math.min((value / max) * 100, 100)}%`;
-const POLL_INTERVAL_MS = 60 * 60 * 1000;
+const POLL_INTERVAL_MS = 3600000;
 const DASHBOARD_CACHE_KEY = "comfortsync.dashboard.snapshot";
 
 const readDashboardCache = () => {
@@ -646,6 +647,8 @@ function ChatPanel({
 }
 
 export default function Dashboard() {
+  const [forecastData, setForecastData] = useState(null);
+  const [forecastLoading, setForecastLoading] = useState(false);
   const navigate = useNavigate();
   const { user, isAuthenticated, logout } = useAuth();
 
@@ -751,33 +754,75 @@ export default function Dashboard() {
     }
   };
 
+  const getTrendSymbol = (trend) => {
+  if (trend === "increasing") return "↑";
+  if (trend === "decreasing") return "↓";
+  return "→";
+};
+
+const getForecastLabel = (key) => {
+  switch (key) {
+    case "temperature":
+      return "Temperature";
+    case "humidity":
+      return "Humidity";
+    case "light_lux":
+      return "Light";
+    case "air_percent":
+      return "Air Quality";
+    case "dust_concentration":
+      return "Dust";
+    default:
+      return key;
+  }
+};
+
+const fetchForecastData = async () => {
+  try {
+    setForecastLoading(true);
+    const response = await fetch("http://localhost:8000/api/forecast/latest");
+    if (!response.ok) {
+      throw new Error("Failed to fetch forecast data");
+    }
+    const data = await response.json();
+    setForecastData(data.forecast);
+  } catch (error) {
+    console.error("Forecast fetch error:", error);
+    setForecastData(null);
+  } finally {
+    setForecastLoading(false);
+  }
+};
+
   useEffect(() => {
-    let isMounted = true;
+  let isMounted = true;
 
-    const loadDashboard = async () => {
-      try {
-        await fetchDashboard();
-        await fetchComfortData();
-        await fetchForecastData();
+const loadDashboard = async () => {
+  try {
+    await Promise.all([
+      fetchDashboard(),
+      fetchComfortData(),
+      fetchForecastData(),
+    ]);
 
-        if (!isMounted) {
-          return;
-        }
-      } catch {
-        if (!isMounted) {
-          return;
-        }
-      }
-    };
+    if (!isMounted) {
+      return;
+    }
+  } catch {
+    if (!isMounted) {
+      return;
+    }
+  }
+};
 
-    loadDashboard();
-    const intervalId = window.setInterval(loadDashboard, POLL_INTERVAL_MS);
+  loadDashboard();
+  const intervalId = window.setInterval(loadDashboard, POLL_INTERVAL_MS);
 
-    return () => {
-      isMounted = false;
-      window.clearInterval(intervalId);
-    };
-  }, []);
+  return () => {
+    isMounted = false;
+    window.clearInterval(intervalId);
+  };
+}, []);
 
   const loadChatHistory = async (chatId) => {
     if (!chatId || !userEmail) {
@@ -1208,24 +1253,37 @@ export default function Dashboard() {
           >
             {tabs.map((tab) => (
               <button
-                key={tab}
-                type="button"
-                role="tab"
-                aria-selected={activeTab === tab}
-                className={`dashboard-tab ${
-                  activeTab === tab ? "dashboard-tab--active" : ""
-                }`}
-                onClick={() => {
-                  if (tab === "Dashboard") {
-                    setActiveTab(tab);
-                    return;
-                  }
+                  key={tab}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === tab}
+                  className={`dashboard-tab ${
+                    activeTab === tab ? "dashboard-tab--active" : ""
+                  }`}
+                  onClick={() => {
+                    if (tab === "Dashboard") {
+                      navigate("/dashboard");
+                      return;
+                    }
 
-                  navigate(`/${tab.toLowerCase()}`);
-                }}
-              >
-                {tab}
-              </button>
+                    if (tab === "Analytics") {
+                      navigate("/analytics");
+                      return;
+                    }
+
+                    if (tab === "ML Analytics") {
+                      navigate("/ml-analytics");
+                      return;
+                    }
+
+                    if (tab === "Chat") {
+                      navigate("/chat");
+                      return;
+                    }
+                  }}
+                >
+                  {tab}
+</button>
             ))}
           </div>
 
@@ -1283,7 +1341,7 @@ export default function Dashboard() {
                 </div>
               </article>
 
-              <article className="dashboard-card dashboard-card--predictions">
+              <article className="dashboard-card dashboard-card--insight">
                 <div className="dashboard-card__header">
                   <div>
                     <p className="dashboard-card-label">
@@ -1294,8 +1352,8 @@ export default function Dashboard() {
                   <FiZap className="dashboard-card__trend" />
                 </div>
 
-                {comfortLoading ? (
-                  <p className="dashboard-card-label">Loading prediction...</p>
+                {comfortLoading && !comfortData ? (
+                 <p className="dashboard-card-label">Loading prediction...</p>
                 ) : comfortData ? (
                   <div className="dashboard-insight-list">
                     <article className="dashboard-insight-item">
@@ -1314,6 +1372,38 @@ export default function Dashboard() {
                   </div>
                 ) : (
                   <p className="dashboard-card-label">Prediction unavailable</p>
+                )}
+              </article>
+
+              <article className="dashboard-card dashboard-card--insight">
+                <div className="dashboard-card__header">
+                  <div>
+                    <p className="dashboard-card-label">Short-term forecast</p>
+                    <h2>Next reading outlook</h2>
+                  </div>
+                  <FiTrendingUp className="dashboard-card__trend" />
+                </div>
+
+                {forecastLoading && !forecastData ? (
+                 <p className="dashboard-card-label">Loading forecast...</p>
+                ) : forecastData ? (
+                  <div className="dashboard-insight-list">
+                    {Object.entries(forecastData).map(([key, value]) => (
+                      <article key={key} className="dashboard-insight-item">
+                        <div>
+                          <strong>
+                            {getForecastLabel(key)} {getTrendSymbol(value.trend)}
+                          </strong>
+                          <p>
+                            Current: {value.current ?? "--"} | Next: {value.predicted_next ?? "--"}
+                          </p>
+                        </div>
+                        <span>{value.trend}</span>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="dashboard-card-label">Forecast unavailable</p>
                 )}
               </article>
 
