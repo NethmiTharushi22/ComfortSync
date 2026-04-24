@@ -37,6 +37,10 @@ const chartPalette = {
 };
 
 const rangeOptions = [
+  { value: "1hr", label: "1 hr" },
+  { value: "3hr", label: "3 hr" },
+  { value: "6hr", label: "6 hr" },
+  { value: "12hr", label: "12 hr" },
   { value: "day", label: "Day" },
   { value: "week", label: "Week" },
   { value: "month", label: "Month" },
@@ -45,11 +49,6 @@ const rangeOptions = [
 const sensorOptions = [
   { value: "", label: "All sensors" },
   { value: "ESP32_ComfortSync", label: "ESP32_ComfortSync" },
-];
-
-const dataModeOptions = [
-  { value: "", label: "All modes" },
-  { value: "accelerated_demo", label: "Accelerated demo" },
 ];
 
 const defaultRanges = {
@@ -110,7 +109,7 @@ const bucketReadings = (readings, keyFn, labelFn) => {
     buckets.get(key).push(reading);
   });
 
-  return Array.from(buckets.entries()).map(([key, bucket], index) => ({
+  return Array.from(buckets.entries()).map(([, bucket], index) => ({
     index: index + 1,
     time: labelFn(bucket[0]),
     temperature: average(bucket.map((r) => r.temperature)),
@@ -119,6 +118,55 @@ const bucketReadings = (readings, keyFn, labelFn) => {
     light: average(bucket.map((r) => r.light)),
     air_percent: average(bucket.map((r) => r.air_percent)),
   }));
+};
+
+const filterReadingsByHours = (readings, hours) => {
+  if (!Array.isArray(readings) || !readings.length) return [];
+
+  const sorted = [...readings].sort(
+    (a, b) => new Date(a.recorded_at) - new Date(b.recorded_at)
+  );
+
+  const latest = sorted[sorted.length - 1];
+  if (!latest?.recorded_at) return sorted;
+
+  const latestTime = new Date(latest.recorded_at).getTime();
+  if (Number.isNaN(latestTime)) return sorted;
+
+  const cutoff = latestTime - hours * 60 * 60 * 1000;
+
+  return sorted.filter((reading) => {
+    const time = new Date(reading.recorded_at).getTime();
+    return !Number.isNaN(time) && time >= cutoff;
+  });
+};
+
+const mapReadingToPoint = (reading, index) => ({
+  index: index + 1,
+  time: formatTimestampLabel(reading.recorded_at),
+  temperature: reading.temperature ?? null,
+  humidity: reading.humidity ?? null,
+  dust: reading.dust ?? null,
+  light: reading.light ?? null,
+  air_percent: reading.air_percent ?? null,
+});
+
+const fallbackCountByRange = {
+  "1hr": 12,
+  "3hr": 24,
+  "6hr": 36,
+  "12hr": 48,
+  day: 72,
+};
+
+const buildShortRangeSeries = (sorted, hours, fallbackCount) => {
+  const filtered = filterReadingsByHours(sorted, hours);
+
+  if (filtered.length >= 2) {
+    return filtered.map((reading, index) => mapReadingToPoint(reading, index));
+  }
+
+  return sorted.slice(-fallbackCount).map((reading, index) => mapReadingToPoint(reading, index));
 };
 
 const groupReadings = (readings, range) => {
@@ -130,30 +178,61 @@ const groupReadings = (readings, range) => {
     (a, b) => new Date(a.recorded_at) - new Date(b.recorded_at)
   );
 
+  if (range === "1hr") {
+    return buildShortRangeSeries(sorted, 1, fallbackCountByRange["1hr"]);
+  }
+
+  if (range === "3hr") {
+    return buildShortRangeSeries(sorted, 3, fallbackCountByRange["3hr"]);
+  }
+
+  if (range === "6hr") {
+    return buildShortRangeSeries(sorted, 6, fallbackCountByRange["6hr"]);
+  }
+
+  if (range === "12hr") {
+    return buildShortRangeSeries(sorted, 12, fallbackCountByRange["12hr"]);
+  }
+
   if (range === "day") {
-    return sorted.slice(-24).map((reading, index) => ({
-      index: index + 1,
-      time: formatTimestampLabel(reading.recorded_at),
-      temperature: reading.temperature ?? null,
-      humidity: reading.humidity ?? null,
-      dust: reading.dust ?? null,
-      light: reading.light ?? null,
-      air_percent: reading.air_percent ?? null,
-    }));
+    return buildShortRangeSeries(sorted, 24, fallbackCountByRange.day);
   }
 
   if (range === "week") {
-    const source = sorted.slice(-60);
-    return bucketReadings(
+    const source = filterReadingsByHours(sorted, 24 * 7);
+    const weekly = bucketReadings(
       source,
+      (reading) => new Date(reading.recorded_at).toDateString(),
+      (reading) => formatDayLabel(reading.recorded_at)
+    ).slice(-7);
+
+    if (weekly.length >= 2) {
+      return weekly;
+    }
+
+    return bucketReadings(
+      sorted.slice(-120),
       (reading) => new Date(reading.recorded_at).toDateString(),
       (reading) => formatDayLabel(reading.recorded_at)
     ).slice(-7);
   }
 
-  const source = sorted.slice(-120);
-  return bucketReadings(
+  const source = filterReadingsByHours(sorted, 24 * 30);
+  const monthly = bucketReadings(
     source,
+    (reading) => {
+      const d = new Date(reading.recorded_at);
+      return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+    },
+    (reading) => formatDateLabel(reading.recorded_at)
+  ).slice(-30);
+
+  if (monthly.length >= 2) {
+    return monthly;
+  }
+
+  return bucketReadings(
+    sorted.slice(-200),
     (reading) => {
       const d = new Date(reading.recorded_at);
       return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
@@ -231,7 +310,6 @@ export default function Analytics() {
   const [forecastData, setForecastData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [sensorIdFilter, setSensorIdFilter] = useState("");
-  const [dataModeFilter, setDataModeFilter] = useState("");
 
   const handleLogout = async () => {
     await logout();
@@ -253,7 +331,6 @@ export default function Analytics() {
 
         const params = {
           sensor_id: sensorIdFilter || undefined,
-          data_mode: dataModeFilter || undefined,
         };
 
         const [dashboardResponse, forecastResponse] = await Promise.all([
@@ -275,38 +352,13 @@ export default function Analytics() {
     };
 
     loadAnalytics();
-  }, [sensorIdFilter, dataModeFilter]);
+  }, [sensorIdFilter]);
 
   const sortedReadings = useMemo(() => {
     return [...(dashboardData?.recent_readings ?? [])].sort(
       (a, b) => new Date(a.recorded_at) - new Date(b.recorded_at)
     );
   }, [dashboardData]);
-
-  const temperatureData = useMemo(
-    () => groupReadings(sortedReadings, timeRanges.temperature),
-    [sortedReadings, timeRanges.temperature]
-  );
-
-  const dustData = useMemo(
-    () => groupReadings(sortedReadings, timeRanges.dust),
-    [sortedReadings, timeRanges.dust]
-  );
-
-  const gasData = useMemo(
-    () => groupReadings(sortedReadings, timeRanges.gas),
-    [sortedReadings, timeRanges.gas]
-  );
-
-  const humidityData = useMemo(
-    () => groupReadings(sortedReadings, timeRanges.humidity),
-    [sortedReadings, timeRanges.humidity]
-  );
-
-  const lightData = useMemo(
-    () => groupReadings(sortedReadings, timeRanges.light),
-    [sortedReadings, timeRanges.light]
-  );
 
   const comparisonItems = useMemo(() => {
     const current = dashboardData?.current ?? {};
@@ -338,6 +390,31 @@ export default function Analytics() {
       },
     ];
   }, [dashboardData, forecastData]);
+
+  const temperatureData = useMemo(
+    () => groupReadings(sortedReadings, timeRanges.temperature),
+    [sortedReadings, timeRanges.temperature]
+  );
+
+  const dustData = useMemo(
+    () => groupReadings(sortedReadings, timeRanges.dust),
+    [sortedReadings, timeRanges.dust]
+  );
+
+  const gasData = useMemo(
+    () => groupReadings(sortedReadings, timeRanges.gas),
+    [sortedReadings, timeRanges.gas]
+  );
+
+  const humidityData = useMemo(
+    () => groupReadings(sortedReadings, timeRanges.humidity),
+    [sortedReadings, timeRanges.humidity]
+  );
+
+  const lightData = useMemo(
+    () => groupReadings(sortedReadings, timeRanges.light),
+    [sortedReadings, timeRanges.light]
+  );
 
   return (
     <main className="dashboard-root">
@@ -390,63 +467,10 @@ export default function Analytics() {
                   ))}
                 </select>
               </label>
-
-              <label className="analytics-range-select">
-                <span>Data mode</span>
-                <select
-                  value={dataModeFilter}
-                  onChange={(event) => setDataModeFilter(event.target.value)}
-                >
-                  {dataModeOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
             </div>
           </div>
 
           <section className="analytics-grid">
-            <article className="analytics-card analytics-card--chart">
-              <div className="analytics-card__header">
-                <div>
-                  <p className="analytics-card__label">Temperature</p>
-                  <h2>Temperature trend</h2>
-                </div>
-
-                <div className="analytics-card__actions">
-                  <RangeSelect
-                    value={timeRanges.temperature}
-                    onChange={handleRangeChange("temperature")}
-                  />
-                  <span className="analytics-card__badge analytics-card__badge--rose">
-                    <FiThermometer />
-                  </span>
-                </div>
-              </div>
-
-              <p className="analytics-card__note">
-                Switch between day, week, and month views to inspect temperature movement over time.
-              </p>
-
-              <div className="analytics-chart-wrap">
-                {isLoading ? (
-                  <p className="dashboard-card-label">Loading chart...</p>
-                ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={temperatureData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                      <CartesianGrid stroke="rgba(173, 231, 211, 0.08)" strokeDasharray="4 4" />
-                      <XAxis dataKey="time" stroke="rgba(226, 242, 236, 0.54)" tickLine={false} axisLine={false} minTickGap={18} />
-                      <YAxis stroke="rgba(226, 242, 236, 0.54)" tickLine={false} axisLine={false} />
-                      <Tooltip content={<AnalyticsTooltip unitMap={{ temperature: "C" }} />} />
-                      <Line type="monotone" dataKey="temperature" name="Temperature" stroke={chartPalette.rose} strokeWidth={3} dot={false} activeDot={{ r: 5 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                )}
-              </div>
-            </article>
-
             <article className="analytics-card analytics-card--chart">
               <div className="analytics-card__header">
                 <div>
@@ -481,6 +505,45 @@ export default function Analytics() {
                     </article>
                   );
                 })}
+              </div>
+            </article>
+
+            <article className="analytics-card analytics-card--chart">
+              <div className="analytics-card__header">
+                <div>
+                  <p className="analytics-card__label">Temperature</p>
+                  <h2>Temperature trend</h2>
+                </div>
+
+                <div className="analytics-card__actions">
+                  <RangeSelect
+                    value={timeRanges.temperature}
+                    onChange={handleRangeChange("temperature")}
+                  />
+                  <span className="analytics-card__badge analytics-card__badge--rose">
+                    <FiThermometer />
+                  </span>
+                </div>
+              </div>
+
+              <p className="analytics-card__note">
+                Switch between short and longer time windows to inspect temperature movement over time.
+              </p>
+
+              <div className="analytics-chart-wrap">
+                {isLoading ? (
+                  <p className="dashboard-card-label">Loading chart...</p>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={temperatureData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                      <CartesianGrid stroke="rgba(173, 231, 211, 0.08)" strokeDasharray="4 4" />
+                      <XAxis dataKey="time" stroke="rgba(226, 242, 236, 0.54)" tickLine={false} axisLine={false} minTickGap={18} />
+                      <YAxis stroke="rgba(226, 242, 236, 0.54)" tickLine={false} axisLine={false} />
+                      <Tooltip content={<AnalyticsTooltip unitMap={{ temperature: "C" }} />} />
+                      <Line type="monotone" dataKey="temperature" name="Temperature" stroke={chartPalette.rose} strokeWidth={3} dot={false} activeDot={{ r: 5 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                )}
               </div>
             </article>
 
@@ -542,7 +605,7 @@ export default function Analytics() {
               </div>
 
               <p className="analytics-card__note">
-                The air-quality chart now reflects real recent backend readings.
+                The air-quality chart reflects live recent backend readings across selectable time windows.
               </p>
 
               <div className="analytics-chart-wrap">
@@ -581,7 +644,7 @@ export default function Analytics() {
               </div>
 
               <p className="analytics-card__note">
-                Compare humidity behavior by day, across the week, or over a month using real readings.
+                Compare humidity behavior across 1hr, 3hr, 6hr, 12hr, daily, weekly, and monthly ranges.
               </p>
 
               <div className="analytics-chart-wrap">
@@ -623,7 +686,7 @@ export default function Analytics() {
               </div>
 
               <p className="analytics-card__note">
-                Switch the light chart between daily, weekly, and monthly snapshots from real data.
+                Switch the light chart between short-window and broader snapshots from live data.
               </p>
 
               <div className="analytics-chart-wrap">

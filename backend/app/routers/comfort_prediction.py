@@ -59,7 +59,7 @@ def predict_latest_comfort():
 
         # Change "sensor_readings" if your collection has a different name
         docs = (
-            db.collection("sensor_readings")
+            db.collection("sensor_data")
             .order_by("recorded_at", direction=Query.DESCENDING)
             .limit(1)
             .stream()
