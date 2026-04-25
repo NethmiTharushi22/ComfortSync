@@ -85,10 +85,6 @@ def build_forecast_summary(limit: int = 10, collection_name: str = "sensor_readi
     return result
 
 
-# =========================================================
-# YOUR ML-BASED 5-MIN FORECAST PART
-# =========================================================
-
 BASE_DIR = Path(__file__).resolve().parents[1]
 MODEL_PATH = BASE_DIR / "comfort_model_best.pkl"
 FEATURES_PATH = BASE_DIR / "feature_columns.pkl"
@@ -127,11 +123,9 @@ def _build_features(df: pd.DataFrame, feature_cols):
     if missing:
         raise ValueError(f"Missing required columns for ML prediction: {missing}")
 
-    # Smooth noisy columns
     df["mq135_smooth"] = df["mq135_raw"].rolling(10, min_periods=1).mean()
     df["dust_smooth"] = df["dust_concentration"].rolling(10, min_periods=1).mean()
 
-    # Temperature features
     df["temp_last"] = df["temperature"]
     df["temp_ma_1min"] = df["temperature"].rolling(12).mean()
     df["temp_ma_5min"] = df["temperature"].rolling(60).mean()
@@ -140,7 +134,6 @@ def _build_features(df: pd.DataFrame, feature_cols):
     df["temp_trend_1"] = df["temperature"].diff()
     df["temp_trend_12"] = df["temperature"].diff(12)
 
-    # Humidity features
     df["hum_last"] = df["humidity"]
     df["hum_ma_1min"] = df["humidity"].rolling(12).mean()
     df["hum_ma_5min"] = df["humidity"].rolling(60).mean()
@@ -149,33 +142,28 @@ def _build_features(df: pd.DataFrame, feature_cols):
     df["hum_trend_1"] = df["humidity"].diff()
     df["hum_trend_12"] = df["humidity"].diff(12)
 
-    # MQ135 features
     df["mq_last"] = df["mq135_smooth"]
     df["mq_ma_1min"] = df["mq135_smooth"].rolling(12).mean()
     df["mq_ma_5min"] = df["mq135_smooth"].rolling(60).mean()
     df["mq_std_5min"] = df["mq135_smooth"].rolling(60).std()
     df["mq_trend_12"] = df["mq135_smooth"].diff(12)
 
-    # Dust features
     df["dust_last"] = df["dust_smooth"]
     df["dust_ma_1min"] = df["dust_smooth"].rolling(12).mean()
     df["dust_ma_5min"] = df["dust_smooth"].rolling(60).mean()
     df["dust_std_5min"] = df["dust_smooth"].rolling(60).std()
     df["dust_trend_12"] = df["dust_smooth"].diff(12)
 
-    # Light features
     df["light_last"] = df["light_lux"]
     df["light_ma_1min"] = df["light_lux"].rolling(12).mean()
     df["light_ma_5min"] = df["light_lux"].rolling(60).mean()
     df["light_std_5min"] = df["light_lux"].rolling(60).std()
     df["light_trend_12"] = df["light_lux"].diff(12)
 
-    # Time features
     df["hour"] = df["recorded_at"].dt.hour
     df["minute"] = df["recorded_at"].dt.minute
     df["second"] = df["recorded_at"].dt.second
 
-    # Lag features
     df["temp_lag_1"] = df["temperature"].shift(1)
     df["temp_lag_12"] = df["temperature"].shift(12)
     df["temp_lag_60"] = df["temperature"].shift(60)
@@ -188,6 +176,10 @@ def _build_features(df: pd.DataFrame, feature_cols):
 
     if df.empty:
         raise ValueError("Not enough recent rows to build ML forecast features")
+
+    missing_feature_cols = [c for c in feature_cols if c not in df.columns]
+    if missing_feature_cols:
+        raise ValueError(f"Missing trained feature columns in dataframe: {missing_feature_cols}")
 
     return df[feature_cols].iloc[[-1]].copy()
 
@@ -213,7 +205,6 @@ def build_ml_forecast_summary(limit: int = 220) -> dict[str, Any]:
 
     X = _build_features(df, feature_cols)
     X_scaled = scaler.transform(X)
-
     pred = model.predict(X_scaled)[0]
 
     return {
