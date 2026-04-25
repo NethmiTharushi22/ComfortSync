@@ -10,7 +10,7 @@ router = APIRouter()
 @router.get("/latest")
 def get_latest_forecast():
     try:
-        forecast = build_forecast_summary(limit=10, collection_name="sensor_readings")
+        forecast = build_forecast_summary(limit=10, collection_name="sensor_data")
 
         if not forecast:
             raise HTTPException(status_code=404, detail="No readings available for forecasting")
