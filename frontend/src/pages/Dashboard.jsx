@@ -1023,8 +1023,6 @@ export default function Dashboard() {
   const latestUpdated = formatTimestamp(liveReading?.recorded_at);
   const aqi = getPm25AqiSummary(liveReading?.dust);
   const gasSummary = getGasSummary(liveReading?.air_percent);
-  const gasPrediction = dashboardData?.gas_prediction;
-
   const aqiGaugeStyle = {
     "--aqi-angle": `${Math.min(((aqi.value ?? 0) / 500) * 180, 180)}deg`,
   };

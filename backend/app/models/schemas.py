@@ -78,19 +78,12 @@ class DeviceStatusOut(BaseModel):
     description: str
 
 
-class GasPredictionOut(BaseModel):
-    predicted_value: float | None = None
-    unit: str = "ppm"
-    note: str
-
-
 class DashboardSnapshotOut(BaseModel):
     current: SensorReadingOut
     alerts: list[DashboardAlertOut]
     devices: list[DeviceStatusOut]
     recent_readings: list[SensorReadingOut]
     controls: DeviceControlOut
-    gas_prediction: GasPredictionOut
     status: str
 
 

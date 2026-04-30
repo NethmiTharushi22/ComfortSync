@@ -10,11 +10,9 @@ from app.models.schemas import (
     DashboardAlertOut,
     DashboardSnapshotOut,
     DeviceStatusOut,
-    GasPredictionOut,
     SensorReadingOut,
 )
 from app.routers.device_controls import get_current_device_controls
-from app.services.gas_prediction import predict_next_gas_value
 
 router = APIRouter()
 ALERT_RETENTION_HOURS = 36
@@ -258,26 +256,6 @@ def _matches_filters(payload: dict[str, Any], sensor_id: str | None, data_mode: 
     return True
 
 
-def _build_gas_prediction(normalized: list[dict[str, Any]]) -> GasPredictionOut:
-    gas_history = [
-        item["reading"].gas
-        for item in reversed(normalized)
-        if item["reading"].gas is not None
-    ]
-    predicted_value = predict_next_gas_value(gas_history)
-
-    if predicted_value is None:
-        return GasPredictionOut(
-            predicted_value=None,
-            note="Prediction will appear after enough gas readings are available.",
-        )
-
-    return GasPredictionOut(
-        predicted_value=round(predicted_value, 1),
-        note="Predicted next gas reading based on the latest sensor trend.",
-    )
-
-
 @router.get("/dashboard", response_model=DashboardSnapshotOut)
 def get_dashboard_snapshot(
     sensor_id: str | None = Query(default=None),
@@ -307,10 +285,6 @@ def get_dashboard_snapshot(
             devices=_build_devices(empty, {}),
             recent_readings=[],
             controls=controls,
-            gas_prediction=GasPredictionOut(
-                predicted_value=None,
-                note="Prediction will appear after enough gas readings are available.",
-            ),
             status="attention",
         )
 
@@ -347,10 +321,6 @@ def get_dashboard_snapshot(
             devices=_build_devices(empty, {}),
             recent_readings=[],
             controls=controls,
-            gas_prediction=GasPredictionOut(
-                predicted_value=None,
-                note="Prediction will appear after enough gas readings are available.",
-            ),
             status="attention",
         )
 
@@ -364,6 +334,5 @@ def get_dashboard_snapshot(
         devices=_build_devices(current, current_payload),
         recent_readings=[item["reading"] for item in normalized[:30]],
         controls=controls,
-        gas_prediction=_build_gas_prediction(normalized),
         status=_overall_status(alerts),
     )
