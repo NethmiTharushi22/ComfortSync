@@ -21,20 +21,6 @@ import "./Dashboard.css";
 
 const tabs = ["Dashboard", "Analytics", "ML Analytics", "Chat"];
 
-const staticForecast = [
-  { label: "Temperature", value: "+1.8 C", note: "Likely to rise by evening" },
-  { label: "Humidity", value: "+4%", note: "Indoor moisture trend increasing" },
-  {
-    label: "Gas level",
-    value: "+12 ppm",
-    note: "Peak cooking period expected",
-  },
-  {
-    label: "Dust level",
-    value: "+8 ug/m3",
-    note: "Windows open scenario detected",
-  },
-];
 // convert raw135 value to percentage and clamp between 0-100%
 const convertMqToPercent = (mqValue) => {
   if (typeof mqValue !== "number" || Number.isNaN(mqValue)) {
@@ -359,78 +345,6 @@ const upsertChatHistorySummary = (items, history) => {
   );
 };
 
-const buildAssistantReply = ({
-  prompt,
-  dashboardData,
-  latestUpdated,
-  aqi,
-  gasSummary,
-}) => {
-  const normalizedPrompt = prompt.trim().toLowerCase();
-  const current = dashboardData?.current ?? {};
-  const temperature = readNumber(current.temperature);
-  const humidity = readNumber(current.humidity);
-  const dust = readNumber(current.dust);
-  const light = readNumber(current.light);
-  const airPercent = readNumber(current.air_percent);
-
-  if (normalizedPrompt.includes("gas") || normalizedPrompt.includes("air")) {
-    return `Gas status is ${gasSummary.label.toLowerCase()} right now${
-      typeof gasSummary.value === "number"
-        ? ` at ${gasSummary.value.toFixed(1)}%`
-        : ""
-    }. ${gasSummary.note} Last live update was ${latestUpdated}.`;
-  }
-
-  if (normalizedPrompt.includes("dust") || normalizedPrompt.includes("aqi")) {
-    return `Current PM2.5 AQI is ${aqi.value ?? "--"} and the room is marked as ${aqi.label.toLowerCase()}. ${aqi.note}`;
-  }
-
-  if (normalizedPrompt.includes("temperature")) {
-    return `The latest room temperature is ${
-      typeof temperature === "number"
-        ? `${temperature.toFixed(1)} C`
-        : "not available yet"
-    }. ${
-      typeof temperature === "number" && temperature >= 30
-        ? "That is above the comfort range, so airflow or cooling would help."
-        : "It is currently within a more comfortable range."
-    }`;
-  }
-
-  if (normalizedPrompt.includes("humidity")) {
-    return `Humidity is ${
-      typeof humidity === "number"
-        ? `${humidity.toFixed(1)}%`
-        : "not available yet"
-    }. ${
-      typeof humidity === "number" && (humidity < 35 || humidity > 70)
-        ? "It is outside the ideal band, so the room should be monitored."
-        : "It is currently close to the ideal indoor range."
-    }`;
-  }
-
-  if (normalizedPrompt.includes("light")) {
-    return `Light intensity is ${
-      typeof light === "number"
-        ? `${light.toFixed(1)} lux`
-        : "not available yet"
-    }. ${
-      typeof light === "number" && light < 120
-        ? "The room looks dim, so switching lights on would make sense."
-        : "Lighting looks adequate from the latest reading."
-    }`;
-  }
-
-  return `Here’s a quick room summary from the latest reading at ${latestUpdated}: temperature ${
-    typeof temperature === "number" ? `${temperature.toFixed(1)} C` : "--"
-  }, humidity ${
-    typeof humidity === "number" ? `${humidity.toFixed(1)}%` : "--"
-  }, air quality ${
-    typeof airPercent === "number" ? `${airPercent.toFixed(1)}%` : "--"
-  }, dust ${typeof dust === "number" ? `${dust.toFixed(1)} ug/m3` : "--"}. Ask me about gas, AQI, temperature, humidity, or lighting and I’ll focus on that.`;
-};
-
 const formatPredictionValue = (value, unit = "") => {
   if (typeof value !== "number" || Number.isNaN(value)) {
     return "--";
@@ -459,6 +373,43 @@ const buildPredictionNote = (label, currentValue, predictedValue, unit) => {
   }
 
   return `${label} may drop by ${Math.abs(delta).toFixed(1)} ${unit} in the next 5 minutes.`;
+};
+
+const getNumericTrend = (currentValue, nextValue, stableThreshold = 0.1) => {
+  if (
+    typeof currentValue !== "number" ||
+    Number.isNaN(currentValue) ||
+    typeof nextValue !== "number" ||
+    Number.isNaN(nextValue)
+  ) {
+    return "unknown";
+  }
+
+  const delta = nextValue - currentValue;
+
+  if (Math.abs(delta) < stableThreshold) {
+    return "stable";
+  }
+
+  return delta > 0 ? "increasing" : "decreasing";
+};
+
+const getDisplayTrend = (label, currentValue, nextValue) => {
+  const baseTrend = getNumericTrend(currentValue, nextValue);
+
+  if (label === "Air Quality") {
+    if (baseTrend === "increasing") return "improving";
+    if (baseTrend === "decreasing") return "worsening";
+    return baseTrend;
+  }
+
+  return baseTrend;
+};
+
+const getDisplayTrendSymbol = (trend) => {
+  if (trend === "increasing" || trend === "improving") return "↑";
+  if (trend === "decreasing" || trend === "worsening") return "↓";
+  return "→";
 };
 
 function ChatPanel({
@@ -654,8 +605,6 @@ function ChatPanel({
 }
 
 export default function Dashboard() {
-  const [forecastData, setForecastData] = useState(null);
-  const [forecastLoading, setForecastLoading] = useState(false);
   const navigate = useNavigate();
   const { user, isAuthenticated, logout } = useAuth();
 
@@ -677,6 +626,9 @@ export default function Dashboard() {
 
   const [comfortData, setComfortData] = useState(null);
   const [comfortLoading, setComfortLoading] = useState(false);
+
+  const [fiveMinForecast, setFiveMinForecast] = useState(null);
+  const [fiveMinLoading, setFiveMinLoading] = useState(false);
 
   const userEmail = user?.email ?? "";
 
@@ -716,9 +668,6 @@ export default function Dashboard() {
       }
     }
   };
-
-  const [fiveMinForecast, setFiveMinForecast] = useState(null);
-  const [fiveMinLoading, setFiveMinLoading] = useState(false);
 
   const fetchFiveMinForecast = async () => {
     try {
@@ -761,46 +710,6 @@ export default function Dashboard() {
     }
   };
 
-  const getTrendSymbol = (trend) => {
-    if (trend === "increasing") return "↑";
-    if (trend === "decreasing") return "↓";
-    return "→";
-  };
-
-  const getForecastLabel = (key) => {
-    switch (key) {
-      case "temperature":
-        return "Temperature";
-      case "humidity":
-        return "Humidity";
-      case "light_lux":
-        return "Light";
-      case "air_percent":
-        return "Air Quality";
-      case "dust_concentration":
-        return "Dust";
-      default:
-        return key;
-    }
-  };
-
-  const fetchForecastData = async () => {
-    try {
-      setForecastLoading(true);
-      const response = await fetch("http://localhost:8000/api/forecast/latest");
-      if (!response.ok) {
-        throw new Error("Failed to fetch forecast data");
-      }
-      const data = await response.json();
-      setForecastData(data.forecast);
-    } catch (error) {
-      console.error("Forecast fetch error:", error);
-      setForecastData(null);
-    } finally {
-      setForecastLoading(false);
-    }
-  };
-
   useEffect(() => {
     let isMounted = true;
 
@@ -809,7 +718,6 @@ export default function Dashboard() {
         await Promise.all([
           fetchDashboard(),
           fetchComfortData(),
-          fetchForecastData(),
           fetchFiveMinForecast(),
         ]);
 
@@ -934,7 +842,7 @@ export default function Dashboard() {
     try {
       await fetchDashboard({ manual: true });
       await fetchComfortData();
-      await fetchForecastData();
+      await fetchFiveMinForecast();
     } catch {}
   };
 
@@ -1181,6 +1089,42 @@ export default function Dashboard() {
   const prediction5min = fiveMinForecast?.prediction_5min ?? {};
   const latestPredictionSource = fiveMinForecast?.latest ?? {};
 
+  const nextReadingOutlook = [
+    {
+      label: "Temperature",
+      current: readNumber(latestPredictionSource.temperature),
+      next: readNumber(prediction5min.temperature_5min),
+      unit: "C",
+    },
+    {
+      label: "Humidity",
+      current: readNumber(latestPredictionSource.humidity),
+      next: readNumber(prediction5min.humidity_5min),
+      unit: "%",
+    },
+    {
+      label: "Light",
+      current: readNumber(latestPredictionSource.light_lux),
+      next: readNumber(prediction5min.light_5min),
+      unit: "lux",
+    },
+    {
+      label: "Air Quality",
+      current: convertMqToPercent(readNumber(latestPredictionSource.mq135_raw)),
+      next: convertMqToPercent(readNumber(prediction5min.mq135_5min)),
+      unit: "%",
+    },
+    {
+      label: "Dust",
+      current: readNumber(latestPredictionSource.dust_concentration),
+      next: readNumber(prediction5min.dust_5min),
+      unit: "ug/m3",
+    },
+  ].map((item) => ({
+    ...item,
+    trend: getDisplayTrend(item.label, item.current, item.next),
+  }));
+
   const forecast = [
     {
       label: "Temperature",
@@ -1393,23 +1337,22 @@ export default function Dashboard() {
                   <FiTrendingUp className="dashboard-card__trend" />
                 </div>
 
-                {forecastLoading && !forecastData ? (
+                {fiveMinLoading && !fiveMinForecast ? (
                   <p className="dashboard-card-label">Loading forecast...</p>
-                ) : forecastData ? (
+                ) : nextReadingOutlook.length ? (
                   <div className="dashboard-insight-list">
-                    {Object.entries(forecastData).map(([key, value]) => (
-                      <article key={key} className="dashboard-insight-item">
+                    {nextReadingOutlook.map((item) => (
+                      <article key={item.label} className="dashboard-insight-item">
                         <div>
                           <strong>
-                            {getForecastLabel(key)}{" "}
-                            {getTrendSymbol(value.trend)}
+                            {item.label} {getDisplayTrendSymbol(item.trend)}
                           </strong>
                           <p>
-                            Current: {value.current ?? "--"} | Next:{" "}
-                            {value.predicted_next ?? "--"}
+                            Current: {formatPredictionValue(item.current, item.unit)} | Next:{" "}
+                            {formatPredictionValue(item.next, item.unit)}
                           </p>
                         </div>
-                        <span>{value.trend}</span>
+                        <span>{item.trend}</span>
                       </article>
                     ))}
                   </div>

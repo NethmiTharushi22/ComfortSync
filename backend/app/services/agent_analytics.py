@@ -4,7 +4,7 @@ from google.cloud.firestore_v1 import Query
 from app.db import get_db
 
 
-def get_latest_reading(collection_name: str = "sensor_readings"):
+def get_latest_reading(collection_name: str = "sensor_data"):
     db = get_db()
     docs = (
         db.collection(collection_name)
@@ -20,7 +20,7 @@ def get_latest_reading(collection_name: str = "sensor_readings"):
     return latest_doc
 
 
-def get_recent_readings(limit: int = 10, collection_name: str = "sensor_readings"):
+def get_recent_readings(limit: int = 10, collection_name: str = "sensor_data"):
     db = get_db()
     docs = (
         db.collection(collection_name)
